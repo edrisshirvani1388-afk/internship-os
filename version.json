@@ -1,13 +1,7 @@
 {
-    "highlights":  [
-                       "زیرساخت آپدیت خودکار با نصب سایلنت یک‌کلیکی.",
-                       "- backend: نصب installer با /SILENT و حفظ مسیر نصب فعلی",
-                       "- verify SHA256 برای امنیت دانلود",
-                       "- app.js: ارسال installerUrl به backend",
-                       "- حفظ data/ کاربر در همه‌ی آپدیت‌ها"
-                   ],
+    "highlights":  "Release v0.5.1",
     "schema":  22,
-    "version":  "0.5.0",
+    "version":  "0.5.1",
     "releasedAt":  "2026-10-16",
-    "notes":  "v0.5.0"
+    "notes":  "v0.5.1"
 }

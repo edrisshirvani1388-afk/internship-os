@@ -953,3 +953,89 @@ activity level). Invalid inputs -> NULL (never 0).
 - Modal with 3 tabs: search / categories / history
 - CAT_ICONS map (23 Persian->emoji rules)
 - Hub: day / trend sub-tabs; trend = heatmap + line chart + 4 cards
+
+---
+
+## Auto-Update Infrastructure (v0.5.1)
+
+File: `release.ps1`, `release.iss`, `release.cmd`, `server-dotnet/Program.cs` (endpoints)
+
+### Flow
+
+    Developer:  release.cmd (double-click)
+                    │ prompts for version
+                    ▼
+                release.ps1
+                    │ 1. dotnet publish → server/
+                    │ 2. copy app/, server/, Food.db, CHANGELOG → release folder
+                    │ 3. write empty data/state.js
+                    │ 4. update VERSION, version.json, app/data.js
+                    │ 5. ISCC compile → InternshipOS-Setup-vX.Y.Z.exe
+                    │ 6. SHA256
+                    │ 7. build update.json
+                    │ 8. git push
+                    │ 9. gh release create + upload installer + update.json
+                    ▼
+                GitHub Release (public)
+
+    User:       App → تنظیمات → «بررسی آپدیت»
+                    │
+                    ▼
+                GET /api/check-update?url=<manifest>
+                    │ backend fetches manifest from GitHub
+                    ▼
+                modal: «نسخه‌ی جدید vX.Y.Z» + notes + دکمه
+                    │
+                    ▼
+                POST /api/apply-update { installerUrl, newVersion, sha256 }
+                    │ 1. download exe to %TEMP%
+                    │ 2. verify SHA256
+                    │ 3. read install dir from registry (AppId)
+                    │ 4. Process.Start(exe, "/SILENT /NORESTART /DIR=...")
+                    │ 5. Environment.Exit(0) after 2 s
+                    ▼
+                Inno Setup installer runs silently
+                    │ replaces app/, server/, Food.db, root files
+                    │ EXCLUDES data/ (user preserved)
+                    │ [Run] postinstall → re-launch app
+                    ▼
+                App vX.Y.Z running with user's data intact
+
+### Key decisions
+
+- **Installer-based, not ZIP** — handles backend binary changes,
+  DB updates, schema migration chain. ZIP-only was insufficient.
+- **AppId stable** — `{B8F3A9D5-2E4C-4A1B-9F5D-1C7E3B8A6F2D}` → Inno
+  recognizes upgrade, keeps install location.
+- **Silent + self-exit** — app calls `Environment.Exit(0)` so the
+  running `InternshipOS.exe` is not locked when installer replaces it.
+- **SHA256 verify** — protects against corrupted downloads.
+- **data/ excluded** — installer `Excludes: "data\*,data"` on the
+  main wildcard. `state.js` and `ai-config.json` only written on
+  fresh install (`onlyifdoesntexist`).
+
+### Registry contract
+
+Install location stored at:
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{B8F3A9D5-...}_is1\InstallLocation`
+
+Backend reads this before launching the installer so the new install
+goes to the same directory. Fallback: `%LOCALAPPDATA%\Programs\InternshipOS`.
+
+### Endpoints
+
+    GET  /api/check-update?url=<manifest-url>
+    POST /api/apply-update   body: { installerUrl, newVersion, sha256 }
+
+See `docs/AUTO-UPDATE.md` for full details, troubleshooting, and
+developer workflow.
+
+### Constraints
+
+- Versions < 0.5.1 have ZIP-based update logic. One-time manual
+  install of v0.5.1 is required to enter the auto-update path.
+- No delta updates. Each update downloads the full installer (~56 MB).
+- No code signing. Windows SmartScreen may show a warning on first
+  install from a new machine (signed builds planned).
+- No progress percentage in the update modal (shows only "در حال
+  دانلود").

@@ -464,3 +464,43 @@ No new state. Metrics derive from:
   - نزدیک‌ترین قرار زندگی    → state.life.items[] linked to state.tasks[]
 
 A metric hides when its data source is empty. Never fabricate 0.
+## Auto-Update Infrastructure (v0.5.1)
+
+Schema Version stays 22. No state field changes.
+
+### `update.json` (manifest, NOT in state)
+
+    {
+      "latest": "0.5.1",
+      "installerUrl": "https://github.com/.../releases/download/v0.5.1/InternshipOS-Setup-v0.5.1.exe",
+      "zipUrl": "<same as installerUrl — legacy alias>",
+      "sha256": "45870960DB527F...",
+      "sizeBytes": 58754032,
+      "releaseNotes": "...",
+      "publishedAt": "2026-10-16"
+    }
+
+Location on GitHub: release asset named `update.json`, reachable via
+`.../releases/latest/download/update.json`.
+
+### Backend contract
+
+`GET /api/check-update?url=<manifest-url>` — fetches and parses.
+`POST /api/apply-update` with body `{ installerUrl, newVersion, sha256 }` —
+downloads, verifies, executes silent install.
+
+### `VERSION` (root)
+
+Single-line semver, e.g. `0.5.1`. Written by `release.ps1`.
+Read by `app.js` at boot for display; compared to manifest `latest`.
+
+### `version.json` (root)
+
+Same shape as before, updated per release:
+`{ version, releasedAt, schema, highlights[], notes }`.
+
+### No state impact
+
+No new fields in `window.INTERNSHIP_STATE`. `data/` preservation is
+handled entirely at the installer layer (`release.iss` excludes `data\`
+from the wildcard copy).

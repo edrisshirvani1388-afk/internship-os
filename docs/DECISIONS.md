@@ -1024,3 +1024,71 @@ Impact:
 
 Non-goal: writing into `data.js` or the shared curriculum. Manual/AI
 content is user-scoped (stored in state, not in the base catalog).
+## ADR-059 — Installer-Based Auto-Update (v0.5.1)
+
+Date: 2026-10-16
+Status: Accepted
+
+Decision: Auto-update uses the Inno Setup installer as the update
+payload. The backend downloads it, verifies SHA256, and runs it with
+`/SILENT /NORESTART /SUPPRESSMSGBOXES /DIR=<previous-install-path>`.
+The old ZIP-based approach (replace `app/` directory only) is retired.
+
+Context: Prior auto-update replaced only the `app/` folder, missing
+new backend binaries, new root files (Food.db), or new dependency
+changes. Any version with a backend or DB change could not ship
+via that path.
+
+Alternatives considered:
+  (i)  ZIP of full release folder + in-place replace (unsafe: locked
+       exe cannot be overwritten while running),
+  (ii) keep ZIP-based (fails on schema/backend changes),
+  (iii) installer-based silent (chosen).
+
+Why (iii):
+  - Inno Setup installer already exists for manual installs.
+  - AppId is stable → installer upgrades over previous install and
+    preserves user `data/`.
+  - `/SILENT` runs without UI; the running app calls `Environment.Exit(0)`
+    after starting the installer so files are free to replace.
+  - SHA256 verification guarantees the download was not corrupted.
+  - Handles all future changes: new files, new DB, new NuGet deps,
+    schema bumps via existing migration chain.
+
+Contract:
+  - Source of truth: `VERSION` (semver `X.Y.Z`).
+  - Manifest URL: `https://github.com/<owner>/<repo>/releases/latest/download/update.json`
+  - Manifest fields: `latest`, `installerUrl`, `sha256`, `sizeBytes`,
+    `releaseNotes`, `publishedAt`, `zipUrl` (legacy alias).
+  - `release.cmd` (double-click) → `release.ps1` does the full cycle:
+    build → assemble → installer → sha256 → push → gh release.
+  - Backend `/api/check-update` reads manifest and returns parsed JSON.
+  - Backend `/api/apply-update`:
+      1. Download installer to `%TEMP%`
+      2. Verify SHA256
+      3. Read install path from registry
+         `HKCU\...\Uninstall\{AppId}_is1\InstallLocation`
+      4. Fallback to `%LOCALAPPDATA%\Programs\InternshipOS`
+      5. `Process.Start(installer, "/SILENT /NORESTART ... /DIR=<path>")`
+      6. After 2 s: `Environment.Exit(0)`
+  - Installer `release.iss`:
+      - `CloseApplications=force`, `RestartApplications=no`
+      - `UsePreviousAppDir=yes`
+      - `data\` excluded from wildcard → preserved
+      - `[Run]` without `skipifsilent`
+
+Impact:
+  - `release.iss`, `release.ps1`, `release.cmd` (new)
+  - `server-dotnet/Program.cs` — check-update + apply-update rewritten
+  - `app/app.js` — sends `installerUrl` + `sha256` to backend
+  - `app/data.js` — `updateUrl` points to manifest
+  - `.gitignore` — ignore `data/`, `server/`, `dist-*`, `*.bak*`
+
+Migration path:
+  - Versions < 0.5.1 must install v0.5.1 manually once.
+  - From v0.5.1 on, all updates are one-click.
+
+Non-goals:
+  - Delta / incremental updates.
+  - Rollback UI (installer keeps 2 backups; manual restore).
+  - Code signing (planned future).

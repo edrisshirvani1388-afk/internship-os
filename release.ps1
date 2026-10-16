@@ -90,8 +90,8 @@ if(-not $SkipPush){
     Push-Location $Root
     try {
         $ErrorActionPreference = 'Continue'; git add VERSION version.json app/data.js app/app.js server-dotnet/Program.cs update.json release.iss release.ps1 release.cmd 2>$null; $ErrorActionPreference = 'Stop'
-        git -c user.name=Edris -c user.email=edris@local commit -m "release: v$Version" 2>&1 | Out-Null
-        git push origin main 2>&1 | ForEach-Object { Write-Host $_ }
+        $ErrorActionPreference = 'Continue'; git -c user.name=Edris -c user.email=edris@local commit -m "release: v$Version" 2>$null; $ErrorActionPreference = 'Stop'
+        $ErrorActionPreference = 'Continue'; git push origin main 2>&1 | ForEach-Object { Write-Host $_ }; $ErrorActionPreference = 'Stop'
         if($LASTEXITCODE -ne 0){ Say 'push failed' 'Red'; exit 1 }
     } finally { Pop-Location }
     $tag = "v$Version"

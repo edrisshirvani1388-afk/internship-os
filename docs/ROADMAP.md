@@ -247,3 +247,21 @@ Cross-domain audit    [BACKLOG]
 - Trigger clearByIds contract
 - scheduling-conflict-v20.js RULES table
 - window.INTERNSHIP_STATE — read-only snapshot
+## DONE — v0.5.0 / v0.5.1 (2026-10-16 · Agent #16)
+
+Phase U.1 — Git init + .gitignore + first commit
+Phase U.2 — GitHub remote + force push + legacy backup branch
+Phase U.3 — Release infrastructure:
+  - release.iss   (unified Inno Setup template, parameterized)
+  - release.ps1   (full build + assemble + installer + sha256 + push + gh release)
+  - release.cmd   (double-click wrapper)
+Phase U.4 — Backend installer-based update:
+  - /api/check-update reads manifest with installerUrl + sha256
+  - /api/apply-update downloads, verifies SHA256, silent-installs
+  - registry lookup for install dir; fallback to %LOCALAPPDATA%
+Phase U.5 — Frontend:
+  - app.js sends installerUrl + sha256 to backend
+  - data.js updateUrl → releases/latest/download/update.json
+Phase U.6 — v0.5.0 released, v0.5.1 released, end-to-end verified.
+
+Test: manual end-to-end (v0.5.0 → v0.5.1) — PASS

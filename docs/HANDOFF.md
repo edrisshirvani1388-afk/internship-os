@@ -1,86 +1,70 @@
-# Session Handoff (2026-10-16 · v0.4.2)
+# Session Handoff (2026-10-16 · v0.5.1)
 
 ## Status
 
 Schema: v22 (no bump).
-Version: **v0.4.2**.
-Phases A → F.10 complete + Dashboard UX-01/02 + Greeting Cockpit
-+ Manual/AI content + critical food log fix.
+Version: **v0.5.1**.
+Phase U (Auto-Update Infrastructure) complete. End-to-end verified.
 
 ## Session completed
 
-- F.8  — Projects Hub
-- F.9  — Personal Finance
-- F.9.1 — Finance UX (charts, month close, dual budget, reminder)
-- F.10 — Life & Leisure hub
-- UX-01 — Dashboard audit (design)
-- UX-02 — Today-First dashboard (D1/D2/D3)
-- GREETING-COCKPIT — compact greeting card with live clock, metrics, quick actions
-- MANUAL-CONTENT — «➕ محتوای دستی» in Study/Emergency/Procedures
-- AI-CONTENT — «🤖 تولید با AI» with 3-step prompt/paste/commit modal
-- FIX — isEdit in openContentTaskModal
-- FIX — Sleep quick-action route (no view lock)
-- FIX — Money formatter rounding
-- FIX — food log not saving (v0.4.2)
-- FIX — favorites reading stale global (v0.4.2)
+- Git init + .gitignore + first commit
+- GitHub remote (public): edrisshirvani1388-afk/internship-os
+- Legacy backup branch `legacy-v0.3.0-zip-update`
+- `release.iss` — Inno Setup template (parameterized)
+- `release.ps1` — full release automation
+- `release.cmd` — double-click wrapper
+- Backend: check-update (manifest-aware) + apply-update (silent installer)
+- Frontend: installerUrl + sha256 sent to backend
+- Installer excludes `data\` → user data preserved
+- v0.5.0 released + v0.5.1 released
+- End-to-end test: v0.5.0 → v0.5.1 auto-update — PASS
 
 ## Files changed
 
-- app/app.js (bridges, routes, greeting cockpit, manual/AI content, isEdit fix)
-- app/residency/projects-ui.js (NEW, F.8)
-- app/residency/projects-tests.js (NEW, 29 tests)
-- app/residency/finance-ui.js (NEW, F.9/F.9.1)
-- app/residency/finance-tests.js (NEW, 42 tests)
-- app/residency/life-ui.js (NEW, F.10)
-- app/residency/life-tests.js (NEW, 30 tests)
-- app/residency/fooddb-ui.js (state() accessor fix, v0.4.2)
-- app/data.js (accent blue for income, appVersion 0.4.2)
-- app/index.html (register new modules)
-- app/styles.css (many new blocks — F8/F9/F10/UX02/COCKPIT/AI-content)
-- docs/*.md (this session)
-- VERSION / version.json / CHANGELOG.md
+- `release.iss` (NEW)
+- `release.ps1` (NEW)
+- `release.cmd` (NEW)
+- `update.json` (NEW, generated per release)
+- `server-dotnet/Program.cs` — check-update + apply-update rewritten
+- `app/app.js` — installerUrl + sha256 payload
+- `app/data.js` — updateUrl → manifest
+- `.gitignore` (NEW)
+- `VERSION`, `version.json` — bumped to 0.5.1
+- `docs/AUTO-UPDATE.md` (NEW)
+- `docs/DECISIONS.md` + ADR-059
+- `docs/SCHEMA.md` + Auto-Update section
+- `docs/ARCHITECTURE.md` + Auto-Update section
+- `docs/ROADMAP.md` + Phase U
+- `docs/CURRENT.md`, `docs/HANDOFF.md`
 
 ## Test baseline (F12)
 
-All 18 suites green:
-  sleepTests 60, workoutTests 32, healthTests 14, fooddbTests 12,
-  financeTests 42, projectsTests 29, lifeTests 30,
-  schedulingProjection 32, schedulingConflict 48, replanTrigger 39,
-  roundScheduler 47, plannerReplan 20, plannerReplanApply 16,
-  plannerSchedule 9, plannerAllocation 6, feasibilityFixtures 12,
-  store 4, migrationV22 11.
-  **TOTAL: 463/463.**
+All 18 suites green: 463/463 (unchanged from v0.4.2).
+
+## Manual E2E test (PASS)
+
+- v0.5.0 installed → «بررسی آپدیت» → «نسخه‌ی جدید: v0.5.1» →
+  «دانلود و نصب» → silent install → app reopened at v0.5.1 →
+  data/ intact.
 
 ## Do Not Touch
 
-- round-scheduler-v22.js
-- store-v2/v5/v10.js
-- domain-v2.js
-- Replan apply atomicity contract (26.3)
-- Trigger clearByIds contract
-- scheduling-conflict-v20.js RULES table
-- _getEffectiveItems dedup semantics
-- _shouldBlockOverlap policy-HARD enforcement
-- Virtual recurrence id contract (ADR-034)
-- Food.db file (read-only)
-- foodLog snapshot contract (ADR-037)
-- Exercise snapshot contract (ADR-042)
-- Sleep auto-task contract (ADR-044)
-- Sleep log date ownership (ADR-047)
-- state.projects / state.finance / state.life lazy-init semantics
-- finance-daily reminder (owner-retained)
-- Greeting cockpit metric sources
-- **Do not write to window.INTERNSHIP_STATE — use need().state()**
+- `release.iss` AppId (breaks upgrade recognition)
+- `release.iss` `Excludes: "data\*,data"` (user data)
+- Manifest URL format (`releases/latest/download/update.json`)
+- Registry path `{B8F3A9D5-2E4C-4A1B-9F5D-1C7E3B8A6F2D}_is1`
+- All prior invariants (Food.db, snapshots, lazy-init, etc.)
 
 ## Known follow-ups
 
-- LIFE-AREAS-UX-01 (design proposal — dashboard life-cards redesign)
-- Cosmetic polish of greeting cockpit at very narrow widths
-- Sleep modal doesn't exit to dashboard in one click (by design)
-- Finance drawer vs modal — future UX idea
+- No progress bar in update modal (ISSUE-XX)
+- No code signing (SmartScreen warning on new machines)
+- Versions < 0.5.1 must install v0.5.1 manually once
+- Draft release cleanup on network failure (manual)
 
 ## Distribution
 
-- Release folder: `internship-os-releases/InternshipOS-Release-v0.4.2/`
-- Installer: `D:\Desktop\.internship-os\InternshipOS-Setup-v0.4.2.exe`
-- AppId stable → upgrades install over previous version, keeps user data.
+- GitHub Releases: https://github.com/edrisshirvani1388-afk/internship-os/releases
+- Latest manifest: https://github.com/edrisshirvani1388-afk/internship-os/releases/latest/download/update.json
+- Developer: double-click `release.cmd`, type version, done.

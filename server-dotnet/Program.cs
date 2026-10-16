@@ -15,6 +15,42 @@ using Microsoft.Web.WebView2.Core;
 
 namespace InternshipOS.Server;
 
+internal static class UpdateProgress
+{
+    private static readonly object Lock = new();
+    public static string State = "idle";
+    public static long BytesDone = 0;
+    public static long BytesTotal = 0;
+    public static string Error = "";
+    public static string Message = "";
+    public static string Version = "";
+
+    public static void Set(string state, string msg = "")
+    {
+        lock (Lock) { State = state; Message = msg; }
+    }
+    public static void SetBytes(long done, long total)
+    {
+        lock (Lock) { BytesDone = done; BytesTotal = total; }
+    }
+    public static object Snapshot()
+    {
+        lock (Lock)
+        {
+            return new
+            {
+                state = State,
+                bytesDone = BytesDone,
+                bytesTotal = BytesTotal,
+                error = Error,
+                message = Message,
+                version = Version
+            };
+        }
+    }
+}
+
+
 static class Program
 {
     static string Safe(string? name)
@@ -535,7 +571,7 @@ static class Program
         });
 
         // ═══════════════════════════════════════════
-        //  ۱۸. نصب آپدیت (installer-based, silent)
+        //  ۱۸. نصب آپدیت (installer-based, async with progress)
         // ═══════════════════════════════════════════
         app.MapPost("/api/apply-update", async (HttpRequest req) =>
         {
@@ -550,74 +586,106 @@ static class Program
                 if (string.IsNullOrEmpty(installerUrl))
                     return Results.BadRequest(new { error = "installerUrl required" });
 
-                // دانلود installer
-                var tempExe = Path.Combine(Path.GetTempPath(), "InternshipOS-Setup-v" + newVersion + "-" + Guid.NewGuid().ToString("N") + ".exe");
-                using (var http = new HttpClient())
-                {
-                    http.Timeout = TimeSpan.FromMinutes(10);
-                    http.DefaultRequestHeaders.Add("User-Agent", "Internship-OS");
-                    var bytes = await http.GetByteArrayAsync(installerUrl);
-                    await File.WriteAllBytesAsync(tempExe, bytes);
-                }
+                UpdateProgress.State = "starting";
+                UpdateProgress.Message = "آماده‌سازی...";
+                UpdateProgress.Version = newVersion;
+                UpdateProgress.BytesDone = 0;
+                UpdateProgress.BytesTotal = 0;
+                UpdateProgress.Error = "";
 
-                // verify SHA256
-                if (!string.IsNullOrEmpty(expectedHash))
+                _ = Task.Run(async () =>
                 {
-                    using var sha = System.Security.Cryptography.SHA256.Create();
-                    using var fs = File.OpenRead(tempExe);
-                    var actualHash = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "");
-                    if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                    var tempExe = Path.Combine(Path.GetTempPath(), "InternshipOS-Setup-v" + newVersion + "-" + Guid.NewGuid().ToString("N") + ".exe");
+                    try
                     {
-                        try { File.Delete(tempExe); } catch { }
-                        return Results.Json(new { error = "sha256_mismatch", expected = expectedHash, actual = actualHash }, statusCode: 400);
-                    }
-                }
+                        UpdateProgress.Set("downloading", "در حال دانلود...");
 
-                // پیدا کردن مسیر نصب فعلی از registry
-                string installDir = null;
-                try
-                {
-                    var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{B8F3A9D5-2E4C-4A1B-9F5D-1C7E3B8A6F2D}_is1");
-                    if (key != null)
+                        using (var http = new HttpClient())
+                        {
+                            http.Timeout = TimeSpan.FromMinutes(10);
+                            http.DefaultRequestHeaders.Add("User-Agent", "Internship-OS");
+                            using var resp = await http.GetAsync(installerUrl, HttpCompletionOption.ResponseHeadersRead);
+                            resp.EnsureSuccessStatusCode();
+                            var total = resp.Content.Headers.ContentLength ?? 0;
+                            UpdateProgress.SetBytes(0, total);
+                            using var stream = await resp.Content.ReadAsStreamAsync();
+                            using var fs = File.Create(tempExe);
+                            var buffer = new byte[81920];
+                            long done = 0;
+                            int read;
+                            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                            {
+                                await fs.WriteAsync(buffer, 0, read);
+                                done += read;
+                                UpdateProgress.SetBytes(done, total);
+                            }
+                        }
+
+                        UpdateProgress.Set("verifying", "بررسی SHA256...");
+                        if (!string.IsNullOrEmpty(expectedHash))
+                        {
+                            using var sha = System.Security.Cryptography.SHA256.Create();
+                            using var fs2 = File.OpenRead(tempExe);
+                            var actualHash = BitConverter.ToString(sha.ComputeHash(fs2)).Replace("-", "");
+                            if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                            {
+                                try { File.Delete(tempExe); } catch { }
+                                UpdateProgress.Error = "sha256_mismatch";
+                                UpdateProgress.Set("error", "checksum mismatch");
+                                return;
+                            }
+                        }
+
+                        string installDir = null;
+                        try
+                        {
+                            var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{B8F3A9D5-2E4C-4A1B-9F5D-1C7E3B8A6F2D}_is1");
+                            if (key != null)
+                            {
+                                installDir = key.GetValue("InstallLocation") as string;
+                                key.Dispose();
+                            }
+                        }
+                        catch { }
+                        if (string.IsNullOrEmpty(installDir))
+                        {
+                            installDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "InternshipOS");
+                        }
+
+                        UpdateProgress.Set("installing", "در حال نصب...");
+                        var logPath = Path.Combine(Path.GetTempPath(), "InternshipOS-update-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = tempExe,
+                            Arguments = "/SILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"" + installDir + "\" /LOG=\"" + logPath + "\"",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        System.Diagnostics.Process.Start(psi);
+
+                        UpdateProgress.Set("restarting", "برنامه در حال بسته شدن...");
+                        await Task.Delay(2000);
+                        Environment.Exit(0);
+                    }
+                    catch (Exception ex)
                     {
-                        installDir = key.GetValue("InstallLocation") as string;
-                        key.Dispose();
+                        UpdateProgress.Error = ex.Message;
+                        UpdateProgress.Set("error", ex.Message);
                     }
-                }
-                catch { }
-                if (string.IsNullOrEmpty(installDir))
-                {
-                    installDir = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "Programs", "InternshipOS");
-                }
-
-                var logPath = Path.Combine(Path.GetTempPath(), "InternshipOS-update-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
-
-                // اجرای installer سایلنت
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = tempExe,
-                    Arguments = "/SILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"" + installDir + "\" /LOG=\"" + logPath + "\"",
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                System.Diagnostics.Process.Start(psi);
-
-                // بستن خودمان بعد از ۲ ثانیه تا installer بتواند فایل‌ها را جایگزین کند
-                Task.Run(async () =>
-                {
-                    await Task.Delay(2000);
-                    Environment.Exit(0);
                 });
 
-                return Results.Json(new { ok = true, version = newVersion, installDir, log = logPath, installer = tempExe });
+                return Results.Json(new { ok = true, started = true, version = newVersion });
             }
             catch (Exception ex)
             {
                 return Results.Json(new { error = ex.Message }, statusCode: 500);
             }
         });
+
+        // ═══════════════════════════════════════════
+        //  ۱۹. پیشرفت آپدیت
+        // ═══════════════════════════════════════════
+        app.MapGet("/api/apply-update-progress", () => Results.Json(UpdateProgress.Snapshot()));
 
         // ═══════════════════════════════════════════
         //  AI LAYER — Multi-Provider Proxy (v5 - per-provider keys)

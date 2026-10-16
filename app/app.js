@@ -15766,12 +15766,57 @@ function _wireResidencyWelcome(view) {
                     statusEl.innerHTML = `<span style="color:#fb7185">❌ خطا در نصب: ${escapeHTML(j.error)}</span>`;
                     return;
                   }
-                  statusEl.innerHTML = `
-                    <div style="text-align:center;line-height:1.9;">
-                      <div style="font-size:40px;margin-bottom:8px;">✅</div>
-                      <div style="color:#34d399;font-weight:700;">آپدیت نصب شد!</div>
-                      <div style="font-size:12px;color:var(--text-dim);margin-top:6px;">برنامه تا چند ثانیه‌ی دیگه خودش دوباره باز می‌شه...</div>
-                    </div>`;
+                  var pollFailures = 0;
+                  var pollUpdateProgress = function () {
+                    fetch(API_BASE + "/api/apply-update-progress")
+                      .then((r) => r.json())
+                      .then((p) => {
+                        pollFailures = 0;
+                        var pct = (p.bytesTotal > 0) ? Math.min(100, Math.round(p.bytesDone / p.bytesTotal * 100)) : 0;
+                        var mbDone = (p.bytesDone / 1048576).toFixed(1);
+                        var mbTotal = (p.bytesTotal / 1048576).toFixed(1);
+                        if (p.state === "downloading") {
+                          statusEl.innerHTML = `
+                            <div style="text-align:center;line-height:1.9;">
+                              <div style="font-size:32px;margin-bottom:8px;">⬇️</div>
+                              <div style="color:#fbbf24;font-weight:700;margin-bottom:12px;">در حال دانلود آپدیت...</div>
+                              <div style="background:var(--surface-2);border-radius:10px;height:14px;overflow:hidden;margin:0 0 12px;border:1px solid var(--border);">
+                                <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#3b82f6,#5eead4);transition:width 0.3s ease;"></div>
+                              </div>
+                              <div style="font-size:12px;color:var(--text-muted);line-height:1.6;">
+                                <div><strong style="color:var(--text);font-family:ui-monospace;font-size:14px;">${pct}%</strong> · ${mbDone} / ${mbTotal} MB</div>
+                              </div>
+                            </div>`;
+                          setTimeout(pollUpdateProgress, 400);
+                          return;
+                        }
+                        if (p.state === "verifying") {
+                          statusEl.innerHTML = `<div style="text-align:center;color:#5eead4;padding:16px;font-weight:700;">🔐 بررسی SHA256...</div>`;
+                          setTimeout(pollUpdateProgress, 400);
+                          return;
+                        }
+                        if (p.state === "installing" || p.state === "restarting") {
+                          statusEl.innerHTML = `
+                            <div style="text-align:center;line-height:1.9;">
+                              <div style="font-size:32px;margin-bottom:8px;">⚙️</div>
+                              <div style="color:#34d399;font-weight:700;">آپدیت دانلود شد — در حال نصب...</div>
+                              <div style="font-size:12px;color:var(--text-dim);margin-top:6px;">برنامه تا چند ثانیه دیگه خودش بسته و دوباره باز می‌شه.</div>
+                            </div>`;
+                          return;
+                        }
+                        if (p.state === "error") {
+                          statusEl.innerHTML = `<span style="color:#fb7185">❌ خطا: ${escapeHTML(p.error || p.message || "unknown")}</span>`;
+                          return;
+                        }
+                        setTimeout(pollUpdateProgress, 400);
+                      })
+                      .catch(() => {
+                        pollFailures++;
+                        if (pollFailures > 15) return;
+                        setTimeout(pollUpdateProgress, 800);
+                      });
+                  };
+                  pollUpdateProgress();
                 })
                 .catch((err) => {
                   statusEl.innerHTML = `<span style="color:#fb7185">❌ خطا: ${escapeHTML(err.message)}</span>`;

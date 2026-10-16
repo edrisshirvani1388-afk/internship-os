@@ -15713,7 +15713,8 @@ function _wireResidencyWelcome(view) {
           }
           const latest = res.latest || "";
           const notes = res.notes || "";
-          const zipUrl = res.zipUrl || "";
+          const installerUrl = res.installerUrl || res.zipUrl || "";
+          const sha256 = res.sha256 || "";
           const cmp = compareVersions(latest, currentVersion);
 
           if (cmp <= 0) {
@@ -15757,7 +15758,7 @@ function _wireResidencyWelcome(view) {
               fetch(API_BASE + "/api/apply-update", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ zipUrl: zipUrl, newVersion: latest })
+                body: JSON.stringify({ installerUrl: installerUrl, newVersion: latest, sha256: sha256 })
               })
                 .then((r) => r.json())
                 .then((j) => {

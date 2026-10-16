@@ -496,6 +496,9 @@ static class Program
         // ═══════════════════════════════════════════
         //  ۱۷. بررسی آپدیت
         // ═══════════════════════════════════════════
+        // ═══════════════════════════════════════════
+        //  ۱۷. بررسی آپدیت
+        // ═══════════════════════════════════════════
         app.MapGet("/api/check-update", async (string url) =>
         {
             try
@@ -510,12 +513,20 @@ static class Program
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var latest = root.TryGetProperty("latest", out var l) ? l.GetString() : "";
-                var zipUrl = root.TryGetProperty("zipUrl", out var z) ? z.GetString() : "";
-                var notes = root.TryGetProperty("releaseNotes", out var n) ? n.GetString() : "";
-                var publishedAt = root.TryGetProperty("publishedAt", out var p) ? p.GetString() : "";
+                var latest       = root.TryGetProperty("latest", out var l)       ? l.GetString()       : "";
+                var installerUrl = root.TryGetProperty("installerUrl", out var iu) ? iu.GetString()      : "";
+                var zipUrl       = root.TryGetProperty("zipUrl", out var z)       ? z.GetString()       : "";
+                var sha256       = root.TryGetProperty("sha256", out var h)       ? h.GetString()       : "";
+                var notes        = root.TryGetProperty("releaseNotes", out var n) ? n.GetString()       : "";
+                var publishedAt  = root.TryGetProperty("publishedAt", out var p)  ? p.GetString()       : "";
+                long sizeBytes   = 0L;
+                if (root.TryGetProperty("sizeBytes", out var sb) && sb.TryGetInt64(out var sz)) sizeBytes = sz;
 
-                return Results.Json(new { ok = true, latest, zipUrl, notes, publishedAt });
+                // سازگاری با فرمت قدیمی
+                if (string.IsNullOrEmpty(installerUrl) && !string.IsNullOrEmpty(zipUrl))
+                    installerUrl = zipUrl;
+
+                return Results.Json(new { ok = true, latest, installerUrl, zipUrl, sha256, sizeBytes, notes, publishedAt });
             }
             catch (Exception ex)
             {
@@ -524,7 +535,7 @@ static class Program
         });
 
         // ═══════════════════════════════════════════
-        //  ۱۸. نصب آپدیت
+        //  ۱۸. نصب آپدیت (installer-based, silent)
         // ═══════════════════════════════════════════
         app.MapPost("/api/apply-update", async (HttpRequest req) =>
         {
@@ -532,84 +543,75 @@ static class Program
             {
                 using var doc = await JsonDocument.ParseAsync(req.Body);
                 var root = doc.RootElement;
-                var zipUrl = root.GetProperty("zipUrl").GetString();
-                var newVersion = root.GetProperty("newVersion").GetString();
+                var installerUrl = root.TryGetProperty("installerUrl", out var iu) ? iu.GetString() : null;
+                var newVersion   = root.TryGetProperty("newVersion", out var nv)   ? nv.GetString() : "";
+                var expectedHash = root.TryGetProperty("sha256", out var sh)       ? sh.GetString() : null;
 
-                if (string.IsNullOrEmpty(zipUrl))
-                    return Results.BadRequest(new { error = "zipUrl required" });
+                if (string.IsNullOrEmpty(installerUrl))
+                    return Results.BadRequest(new { error = "installerUrl required" });
 
-                var tempZip = Path.Combine(Path.GetTempPath(), "internship-os-update-" + Guid.NewGuid().ToString("N") + ".zip");
-                var tempDir = Path.Combine(Path.GetTempPath(), "internship-os-update-" + Guid.NewGuid().ToString("N"));
-
-                // ─── دانلود ZIP ───
+                // دانلود installer
+                var tempExe = Path.Combine(Path.GetTempPath(), "InternshipOS-Setup-v" + newVersion + "-" + Guid.NewGuid().ToString("N") + ".exe");
                 using (var http = new HttpClient())
                 {
-                    http.Timeout = TimeSpan.FromMinutes(5);
+                    http.Timeout = TimeSpan.FromMinutes(10);
                     http.DefaultRequestHeaders.Add("User-Agent", "Internship-OS");
-                    var bytes = await http.GetByteArrayAsync(zipUrl);
-                    await File.WriteAllBytesAsync(tempZip, bytes);
+                    var bytes = await http.GetByteArrayAsync(installerUrl);
+                    await File.WriteAllBytesAsync(tempExe, bytes);
                 }
 
-                // ─── Extract ───
-                Directory.CreateDirectory(tempDir);
-                System.IO.Compression.ZipFile.ExtractToDirectory(tempZip, tempDir);
-
-                // ─── تشخیص ساختار ZIP ───
-                var sourceAppDir = tempDir;
-                if (Directory.Exists(Path.Combine(tempDir, "app")))
-                    sourceAppDir = Path.Combine(tempDir, "app");
-
-                // ─── بکاپ app/ قدیمی ───
-                var backupDir = appDir + ".bak-" + DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
-                Directory.Move(appDir, backupDir);
-
-                // ─── کپی فایل‌های جدید ───
-                Directory.CreateDirectory(appDir);
-                foreach (var file in Directory.GetFiles(sourceAppDir, "*", SearchOption.AllDirectories))
+                // verify SHA256
+                if (!string.IsNullOrEmpty(expectedHash))
                 {
-                    var rel = Path.GetRelativePath(sourceAppDir, file);
-                    var dest = Path.Combine(appDir, rel);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest));
-                    File.Copy(file, dest, true);
+                    using var sha = System.Security.Cryptography.SHA256.Create();
+                    using var fs = File.OpenRead(tempExe);
+                    var actualHash = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "");
+                    if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { File.Delete(tempExe); } catch { }
+                        return Results.Json(new { error = "sha256_mismatch", expected = expectedHash, actual = actualHash }, statusCode: 400);
+                    }
                 }
 
-                // ─── Cleanup ───
-                try { File.Delete(tempZip); Directory.Delete(tempDir, true); } catch { }
-
-                // ─── پاک‌سازی backupهای قدیمی (فقط ۲ تای آخر بمونن) ───
+                // پیدا کردن مسیر نصب فعلی از registry
+                string installDir = null;
                 try
                 {
-                    var rootDir = Path.GetDirectoryName(appDir);
-                    var backups = Directory.GetDirectories(rootDir, "app.bak-*")
-                        .OrderByDescending(d => d)
-                        .Skip(2)
-                        .ToList();
-                    foreach (var b in backups) try { Directory.Delete(b, true); } catch { }
+                    var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{B8F3A9D5-2E4C-4A1B-9F5D-1C7E3B8A6F2D}_is1");
+                    if (key != null)
+                    {
+                        installDir = key.GetValue("InstallLocation") as string;
+                        key.Dispose();
+                    }
                 }
                 catch { }
+                if (string.IsNullOrEmpty(installDir))
+                {
+                    installDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "Programs", "InternshipOS");
+                }
 
-                // ─── Restart بعد از ۱.۵ ثانیه ───
+                var logPath = Path.Combine(Path.GetTempPath(), "InternshipOS-update-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+
+                // اجرای installer سایلنت
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = tempExe,
+                    Arguments = "/SILENT /NORESTART /SUPPRESSMSGBOXES /DIR=\"" + installDir + "\" /LOG=\"" + logPath + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                System.Diagnostics.Process.Start(psi);
+
+                // بستن خودمان بعد از ۲ ثانیه تا installer بتواند فایل‌ها را جایگزین کند
                 Task.Run(async () =>
                 {
-                    await Task.Delay(1500);
-                    try
-                    {
-                        var exe = Environment.ProcessPath;
-                        if (!string.IsNullOrEmpty(exe))
-                        {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = exe,
-                                UseShellExecute = true
-                            });
-                        }
-                    }
-                    catch { }
+                    await Task.Delay(2000);
                     Environment.Exit(0);
                 });
 
-                return Results.Json(new { ok = true, version = newVersion, backup = backupDir });
+                return Results.Json(new { ok = true, version = newVersion, installDir, log = logPath, installer = tempExe });
             }
             catch (Exception ex)
             {

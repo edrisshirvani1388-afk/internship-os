@@ -4,9 +4,9 @@
 
 window.INTERNSHIP_DATA = {
   schemaVersion: 19,
-  appVersion: "0.4.2",
+  appVersion: "0.5.0",
   curriculumVersion: "6",
-  updateUrl: "https://raw.githubusercontent.com/edrisshirvani1388-afk/internship-os/main/version.json",  // ← اینجا URL version.json رو بذار (بعد از setup GitHub)
+  updateUrl: "https://github.com/edrisshirvani1388-afk/internship-os/releases/latest/download/update.json",  // ← اینجا URL version.json رو بذار (بعد از setup GitHub)
 
   lifeAreas: [
     { id: "clinical",   icon: "🩺", title: "بالین",            subtitle: "Clinical",              desc: "تجربه‌ی بالینی در بخش‌ها؛ شرح حال، معاینه و مدیریت بیمار.", accent: "45, 212, 191" },

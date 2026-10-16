@@ -1,0 +1,9 @@
+{
+    "publishedAt":  "2026-10-16",
+    "releaseNotes":  "زیرساخت آپدیت خودکار با نصب سایلنت یک‌کلیکی.\n- backend: نصب installer با /SILENT و حفظ مسیر نصب فعلی\n- verify SHA256 برای امنیت دانلود\n- app.js: ارسال installerUrl به backend\n- حفظ data/ کاربر در همه‌ی آپدیت‌ها",
+    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.5.0/InternshipOS-Setup-v0.5.0.exe",
+    "sha256":  "156AF382E84BE9F60C219770952445186BB152A63CC1869EBB841FE625EF3ACC",
+    "sizeBytes":  58750412,
+    "latest":  "0.5.0",
+    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.5.0/InternshipOS-Setup-v0.5.0.exe"
+}

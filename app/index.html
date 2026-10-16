@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0a0e13">
+<title>Internship OS</title>
+<script>
+  try {
+    var t = localStorage.getItem("internship-os.theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">🧠</div>
+      <div>
+        <h1>Internship OS</h1>
+        <p>سیستم شخصی زندگی اینترنی</p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="icon-btn icon-btn-save" id="btn-save-state" type="button" title="ذخیره در state.js (Ctrl+S)" aria-label="ذخیره">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+          <polyline points="7 3 7 8 15 8"/>
+        </svg>
+      </button>
+
+      <div class="dash-bell-host" id="io-dash-bell"></div>      <button class="icon-btn" id="btn-theme" type="button" title="تغییر تم" aria-label="تغییر تم">        <svg id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+        </svg>
+        <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="main-nav" id="main-nav">
+    <button class="nav-item" data-route="dashboard" type="button">
+      <span class="nav-icon" aria-hidden="true">🏠</span>
+      <span class="nav-label">داشبورد</span>
+    </button>
+    <button class="nav-item" data-route="calendar" type="button">
+      <span class="nav-icon" aria-hidden="true">📅</span>
+      <span class="nav-label">تقویم</span>
+    </button>
+    <button class="nav-item" data-route="planner" type="button">
+      <span class="nav-icon" aria-hidden="true">📝</span>
+      <span class="nav-label">برنامه‌ریزی</span>
+    </button>
+    <button class="nav-item" data-route="clinical" type="button">
+      <span class="nav-icon" aria-hidden="true">🩺</span>
+      <span class="nav-label">بالین</span>
+    </button>
+    <button class="nav-item" data-route="residency" type="button">
+      <span class="nav-icon" aria-hidden="true">🎓</span>
+      <span class="nav-label">رزیدنتی</span>
+    </button>
+    <button class="nav-item" data-route="progress" type="button">
+      <span class="nav-icon" aria-hidden="true">📊</span>
+      <span class="nav-label">پیشرفت</span>
+    </button>
+    <button class="nav-item" data-route="data" type="button">
+      <span class="nav-icon" aria-hidden="true">⚙️</span>
+      <span class="nav-label">داده‌ها</span>
+    </button>
+    <button class="nav-item" data-route="help" type="button">
+      <span class="nav-icon" aria-hidden="true">❓</span>
+      <span class="nav-label">راهنما</span>
+    </button>
+  </nav>
+
+  <main id="view"></main>
+
+</div>
+
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+<div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
+
+<script src="data.js"></script>
+<script src="../data/state.js"></script>
+<script src="lib/utils.js"></script>
+<script src="lib/date.js"></script>
+<script src="lib/id.js"></script>
+<script src="pickers.js"></script>
+<script src="timeline.js"></script>
+<script src="residency/ai-output-normalizer-v20.js"></script>
+<script src="ai.js"></script>
+<script src="residency/domain.js"></script>
+<script src="residency/baseline-v20.js"></script>
+<script src="residency/store.js"></script>
+<script src="residency/domain-v2.js"></script>
+<script src="residency/store-v2.js"></script>
+<script src="residency/domain-v3.js"></script>
+<script src="residency/calendar.js"></script>
+<script src="residency/store-v3.js"></script>
+<script src="residency/domain-v3-1.js"></script>
+<script src="residency/calendar-v3-1.js"></script>
+<script src="residency/store-v3-1.js"></script>
+<script src="residency/domain-v4.js"></script>
+<script src="residency/activity-store-v4.js"></script>
+<script src="residency/task-projection-v4.js"></script>
+<script src="residency/domain-v5.js"></script>
+<script src="residency/constraint-engine-v5.js"></script>
+<script src="residency/store-v5.js"></script>
+<script src="residency/planner-contract-v6.js"></script>
+<script src="residency/planner-demand-v6.js"></script>
+<script src="residency/planner-snapshot-v6.js"></script>
+<script src="residency/planner-allocation-v6-2.js"></script>
+<script src="residency/planner-constraints-v6-3.js"></script>
+<script src="residency/planner-resolution-v6-3.js"></script>
+<script src="residency/planner-schedule-v6-4.js"></script>
+<script src="residency/planner-proposal-v6-4.js"></script>
+<script src="residency/planner-apply-v6-4.js"></script>
+<script src="residency/planner-orchestrator-v6-4.js"></script>
+<script src="residency/planner-ui-v6-5.js"></script>
+<script src="residency/planner-execution-v7.js"></script>
+<script src="residency/planner-impact-v7.js"></script>
+<script src="residency/planner-recovery-v7.js"></script>
+<script src="residency/planner-replan-v7.js"></script>
+<script src="residency/planner-replan-apply-v7.js"></script>
+<script src="residency/planner-replan-ui-v7.js"></script>
+<script src="residency/ai-context-v8.js"></script>
+<script src="residency/ai-analysis-v8.js"></script>
+<script src="residency/ai-redaction-v8.js"></script>
+<script src="residency/ai-prompts-v8.js"></script>
+<script src="residency/ai-advisors-v8.js"></script>
+<script src="residency/ai-actions-v8.js"></script>
+<script src="residency/ai-ui-v8.js"></script>
+<script src="residency/analytics-core-v9.js"></script>
+<script src="residency/analytics-metrics-v9.js"></script>
+<script src="residency/analytics-workload-v9.js"></script>
+<script src="residency/analytics-residency-v9.js"></script>
+<script src="residency/analytics-trends-v9.js"></script>
+<script src="residency/analytics-quality-v9.js"></script>
+<script src="residency/analytics-ui-v9.js"></script>
+<script src="residency/residency-defaults-v19.js"></script>
+<script src="residency/residency-datepicker-v19.js"></script>
+<script src="residency/residency-setup-wizard-v19.js"></script>
+<script src="residency/residency-managers-v19.js"></script>
+<script src="residency/residency-dashboard-v19.js"></script>
+<script src="residency/domain-v10.js"></script>
+<script src="residency/domain-v20.js"></script>
+<script src="residency/store-v10.js"></script>
+<script src="residency/sr-algorithm-v10.js"></script>
+<script src="residency/review-queue-v10.js"></script>
+<script src="residency/review-proposal-v10.js"></script>
+<script src="residency/review-apply-v10.js"></script>
+<script src="residency/review-integration-v10.js"></script>
+<script src="residency/analytics-review-v10.js"></script>
+<script src="residency/review-ui-v10.js"></script>
+<script src="residency/review-overdue-policy-v11.js"></script>
+<script src="residency/review-proposal-v11.js"></script>
+<script src="residency/review-queue-v11.js"></script>
+<script src="residency/review-settings-ui-v11.js"></script>
+<script src="residency/review-manual-v11.js"></script>
+<script src="residency/analytics-review-v11.js"></script>
+<script src="residency/ai-review-context-v11.js"></script>
+<script src="residency/ai-review-advisor-v11.js"></script>
+<script src="residency/content-domain-v12.js"></script>
+<script src="residency/content-store-v12.js"></script>
+<script src="residency/content-prompts-v12.js"></script>
+<script src="residency/content-request-v12.js"></script>
+<script src="residency/content-generator-v12.js"></script>
+<script src="residency/content-validator-v12.js"></script>
+<script src="residency/content-safety-v12.js"></script>
+<script src="residency/content-dedupe-v12.js"></script>
+<script src="residency/content-merge-v12.js"></script>
+<script src="residency/content-preview-v12.js"></script>
+<script src="residency/content-apply-v12.js"></script>
+<script src="residency/content-ui-v12.js"></script>
+<script src="residency/content-dedupe-v16.js"></script>
+<script src="residency/content-diff-v16.js"></script>
+<script src="residency/content-batch-v16.js"></script>
+<script src="residency/content-io-v16.js"></script>
+<script src="residency/content-ui-v16.js"></script>
+<script src="residency/calendar-view-v14.js"></script>
+<script src="residency/planner-diff-v14.js"></script>
+<script src="residency/workspace-v14-core.js"></script>
+<script src="residency/workspace-v14-ext.js"></script>
+<script src="residency/workspace-v14-proposal.js"></script>
+<script src="residency/calendar-navigation-v15.js"></script>
+<script src="residency/planversion-v15.js"></script>
+<script src="residency/ai-context-inspector-v15.js"></script>
+<script src="residency/workspace-v15-timegrid.js"></script>
+<script src="residency/workspace-v15-planversion.js"></script>
+<script src="residency/workspace-v15-context.js"></script>
+<script src="residency/workspace-v15-move.js"></script>
+<script src="residency/planversion-v17.js"></script>
+<script src="residency/workspace-v17-planversion.js"></script>
+<script src="residency/workspace-keyboard-v18.js"></script>
+<script src="residency/workspace-round-nav-v18.js"></script>
+<script src="residency/scheduling-projection-v20.js"></script>
+<script src="residency/day-timeline-v20.js"></script>
+<script src="residency/scheduling-conflict-v20.js"></script>
+<script src="residency/scheduling-ack-v20.js"></script>
+<script src="residency/replan-trigger-v20.js"></script>
+<script src="residency/availability-engine-v20.js"></script>
+<script src="residency/notification-v20.js"></script>
+<script src="residency/dialog-v20.js"></script>
+<script src="residency/loading-overlay-v20.js"></script>
+<script src="residency/reading-strategy-v20.js"></script>
+<script src="residency/round-scheduler-v22.js"></script>
+<script src="residency/migration-v22-tests.js"></script>
+<script src="residency/feasibility-fixtures-v29.js"></script>
+<script src="residency/health-tests.js"></script>
+<script src="residency/fooddb-tests.js"></script>
+<script src="residency/workoutdb-tests.js"></script>
+<script src="residency/sleep-tests.js"></script>
+<script src="residency/fooddb-ui.js"></script>
+<script src="residency/sleep-ui.js"></script>
+<script src="residency/workoutdb-ui.js"></script>
+  <script src="residency/projects-ui.js"></script>
+  <script src="residency/projects-tests.js"></script>
+  <script src="residency/finance-ui.js"></script>
+  <script src="residency/finance-tests.js"></script>
+  <script src="residency/life-ui.js"></script>
+  <script src="residency/life-tests.js"></script>
+  <script src="app.js"></script>
+</html>

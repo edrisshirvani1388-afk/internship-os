@@ -1,0 +1,41 @@
+# ═══════════════════════════════════════════════════════════
+#  Internship OS — .gitignore
+# ═══════════════════════════════════════════════════════════
+
+# User data (personal state + AI API keys) — NEVER commit
+data/
+
+# Build outputs
+server/
+server-dotnet/bin/
+server-dotnet/obj/
+dist-*/
+*.zip
+
+# Local backups & scratch
+_backups/
+_misc/
+*.bak-*
+*.bak
+
+# Node
+node_modules/
+
+# OS / IDE
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Release folder lives outside the repo (safety net)
+internship-os-releases/
+
+# Logs
+*.log
+# ─── Extra patterns (U.1-fix) ───
+# هر فایلی که «.bak» را هر جایی در نام داشته باشد (bak18, bakFullW2, bakPri, ...)
+*.bak*
+# Scratch docs
+docs/_bak-*
+docs/_p*

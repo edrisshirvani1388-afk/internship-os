@@ -1,0 +1,13 @@
+{
+  "version": "0.4.2",
+  "releasedAt": "2026-10-16",
+  "schema": 22,
+  "highlights": [
+    "Fixed food logging not saving (bridge state reference)",
+    "Fixed favorites list (same stale global)",
+    "Manual content + AI content generation for Study / Emergency / Procedures",
+    "Sleep quick-action route fix",
+    "Content task modal isEdit fix"
+  ],
+  "notes": "v0.4.2 — food log fix + favorites fix."
+}

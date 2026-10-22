@@ -1039,3 +1039,282 @@ developer workflow.
   install from a new machine (signed builds planned).
 - No progress percentage in the update modal (shows only "در حال
   دانلود").
+
+
+## V7 Study Planner (Milestones 1 & 2)
+
+Purpose: sequential day-by-day study scheduling, isolated from legacy planner.
+
+### Modules
+
+| File | Role |
+|---|---|
+| planner-allocator-v7.js | Pure allocator. No DOM, no state. |
+| planner-input-v7.js | Reads state + calendar, produces input. |
+| planner-study-ui-v7.js | Modal UI. Generate -> preview -> per-day add. |
+
+Namespace: window.InternshipResidency.plannerStudyV7
+
+### Allocator
+allocate(input) -> { ok, blocks[], feasibility, validation }
+
+### Input building
+buildInput(planId, { sessionMinutes, maxDays }) -> { ok, input, meta, errors[] }
+
+For each eligible day (chronological, date < examDate):
+  dayType = calendar.getResidencyCalendarContext(date, date, planId)[0].dayType
+  baseCap = settings.defaultCapacity[key(dayType)] x (1 - reservePercent/100)
+  lifeDeduct = _computeLifeEventDeduction(date, dailyLifeSchedule)
+  windowAvail = (studyWindow.end - studyWindow.start) - lifeDeduct
+  effective = min(baseCap, windowAvail)
+
+### Daily Life deductions
+- Deductions only; never Timeline tasks
+- Overlaps counted once (interval union)
+- Overnight spills to next day
+
+### Invariants
+- One book per day; book finish ends day
+- No gaps/duplicates; examDate exclusive
+- Deterministic
+
+### Frozen
+- calendar.getResidencyCalendarContext
+- taskProjection.syncActivityToTask
+- Legacy planner R.plannerUI
+- Schema v22 (no bump)
+---
+
+## V7 Incremental Replan (M5) + Route Switch (M6)
+
+Last Updated: 2026-10-19 (Agent #19)
+
+### Activity contract (from `_buildDayActivity`)
+
+    {
+      id: "act-v7-<ts>-<rand>",
+      kind: "study",
+      planId, roundId, bookId, subjectId,
+      plannedDate: "YYYY/M/D",
+      plannedStartTime, plannedDurationMinutes,
+      plannedPages, plannedPageStart, plannedPageEnd,
+      actualPages, actualDurationMinutes, actualPageRanges,
+      status: "planned" | "in_progress" | "completed" | "cancelled",
+      sourceType: "planner", sourceId: "v7-ui",
+      locked: false,
+      taskId: null,
+      createdAt, updatedAt
+    }
+
+### Progress detection (`planner-input-v7.js::_collectActivityRanges`)
+
+- `status === "completed"` → `read[]` ranges (cross-round)
+- `status === "planned" | "in_progress"` → `planned[]` ranges (per-round, scoped)
+- `initialStudyBaseline.ranges[]` → union with completed at enrollment range
+
+Read ranges applied as: `available = (full - read) - plannedNotCompleted`.
+
+### Dedup key (`planner-study-ui-v7.js::_blockAlreadyInState`)
+
+    (planId, roundId, bookId, date, pageRangeOverlap)
+
+`_rangesOverlap(s1, e1, s2, e2)` — required since a day may contain multiple blocks from same book.
+
+Before M5, key was `(planId, roundId, bookId, date)` — blocked second block on same day → data loss.
+
+### Day capacity (`[PATCH:m5-daycap]` + `[PATCH:m5-daylock]`)
+
+Any planned activity on a date (with same planId) reduces that day's capacity. If reduction is > 0 → `cap = 0` (day locked from future Generate). Ensures a day with any existing activity is not re-proposed.
+
+Planned minutes accumulate across **all enrollment of same plan** — physical day is shared.
+
+### Round-scoped planned exclusion (`[PATCH:m6-isolation]`)
+
+    if (roundId && a.roundId && a.roundId !== roundId) continue;  // skip cross-round planned
+
+Completed activities are NOT scoped by round — real progress is global.
+
+### Route switch (`[PATCH:m6-route]`)
+
+    R.plannerUI._legacyOpen = R.plannerUI.open;   // backup legacy
+    R.plannerUI.open = function (planId) { UI.open(planId); };
+
+Idempotent (guards on `_legacyOpen`). Caller's `planId` passed through unchanged.
+
+Floating dev button: only when `window.__V7_DEV__ = true`.
+
+### UI surfaces
+
+- Breakdown bars per book: read (green) / allocated (yellow) / available (blue) + legend
+- "Why N days unused" diagnostic: planned / zero-cap / short-cap with sample dates
+- Green box "N جلسه · M صفحه" listing added days with Remove / Remove-All
+- Checkbox per day + Add-Selected (N) / Add-All
+- Min/Max day bounds with clamp
+- Persian dates (`۲۷ مهر` not `1405/7/27`)
+- ✕ close button in header
+---
+
+## V7 Draft Editor — Simplified Model (M7-B, Agent #20)
+
+Last Updated: 2026-10-20
+
+### Overview
+
+V7 multi-day draft editor (`_renderDraft`) has a **two-mode** model:
+
+1. **Edit mode** — `_draftState.source` (immutable snapshot at `_draftOpen`)
+2. **Preview mode** — `_draftState.preview.blocks` (allocator output)
+
+No live preview. No source/live reconciliation. No cascade markers in edit.
+
+### Runtime State
+
+    _draftState = {
+      source: [{ _rtid: "src-N", date, bookId, bookTitle, startPage, endPage, pages, minutes }, ...],
+      anchors: { "src-N": { pages, minutes }, ... },
+      _removedSet: { "src-M": true, ... },
+      preview: { ok, blocks, feasibility, validation } | null,
+      lastInput: <I.buildInput output> | null
+    }
+
+- `_rtid` = stable identity. Never persisted.
+- `anchors[_rtid].pages === 0` → removed (restore button)
+
+### Anchor Contract
+
+| Action | Effect |
+|---|---|
+| Edit input → v | `_draftSetAnchor(rtid, v, v*60/pph)` |
+| Restore | `_draftRemoveAnchor(rtid)` |
+| v === 0 | Shown as `(حذف‌شده)` + restore |
+| Preview | `_draftAnchorsToAllocator()` |
+
+### Preview Contract
+
+- `_draftRunPreview()` → fresh `I.buildInput` + anchors → `A.allocate` → `preview`
+- `_draftBuildAndAllocate(prioBookId)` — optional book priority
+- `_draftComputeRemovedDays()` — days fully removed → `capacityMinutes: 0`
+
+### Apply Contract
+
+- `_draftApply()`:
+  1. B5 belt: per-day sum > cap → error, abort
+  2. `_result = { blocks, _fromDraft: true }`
+  3. `_draftState = null`, `_render()`
+- `_onAddDay` / `_onAddAll` / `_onAddSelected`: if `_result._fromDraft`,
+  remove added dates; when empty → `_onGenerate(true)`.
+
+### Live Cap Display
+
+    _dayCapL = _draftGetDayCap(d, blocks)   // min(globalCap, capacity × pph / 60)
+    _liveTotalPages = Σ (anchor.pages || b.pages)
+    _overCapL = _liveTotalPages > _dayCapL
+
+Header: `N ص / سقف M ص` red when over.
+
+### Complete-Book (B6)
+
+- Under-covered book → banner with `[🔧 تلاش برای تکمیل]`
+- Click → `_draftBuildAndAllocate(bookId)` → preview
+- Uses `input.prioritizeBookId`
+
+### Allocator Extensions
+
+- `input.anchors` — `[{date, blocks: [{bookId, startPage, endPage, minutes}]}]`
+- `input.prioritizeBookId` — string or null
+
+### Removed (dead code from M7-B simplification)
+
+- `_draftComputeEffective`, `_effMap`, `_lbMatch`, `_srcMatched`
+- `_draftRunLivePreview`, `_draftScheduleLivePreview`
+- Dropped markers, book warn in edit mode
+
+### Frozen (unchanged)
+
+- `round-scheduler-v22.js`, `store-*`, `domain-*`
+- `planner-replan-apply-v7.js`
+- Schema v22
+- `R.plannerUI.open(planId)` → V7
+- `_legacyOpen` → v6-5
+
+---
+
+## Workspace R2-W Polish Layer (v18, Agent #25)
+
+Last Updated: 2026-10-22
+
+### Purpose
+
+Additive visual/UX polish to Workspace without modifying any of the 9 core workspace files.
+
+### Files
+
+| File | VERSION | Role |
+|---|---|---|
+| workspace-r2w-polish-v18.js | 1.0.0 | Header, cards, Persian, TimeGrid, W-43 |
+| workspace-r2w-completion-v18.js | 1.0.1 | Proposal 3-step, Context/Review, MutationObserver |
+
+Both loaded after workspace-round-nav-v18.js in index.html.
+
+### Pattern - Wrap _postWire
+
+Wrap chain (each layer calls previous, never replaces):
+
+    v14-core._wire
+      -> v14-proposal -> v14-proposal(AI) -> v15-context
+      -> v15-planversion -> v15-timegrid -> v17-planversion
+      -> v18-keyboard -> v18-round-nav
+      -> r2w-polish -> r2w-completion
+
+### Idempotency
+
+Every DOM mutation uses data-r2w-* flags:
+- data-r2w-processed (header)
+- data-r2w-menu (card-actions)
+- data-r2w-fa (Persian text)
+- data-r2w-primary (primary buttons)
+- data-r2w-cap (utilization markers)
+- data-r2w-empty-enhanced (empty proposal)
+- data-r2w-3step (proposal wrapper)
+- data-r2w-comp-pers (Persian containers)
+
+### MutationObserver
+
+Observe .pw14-overlay { childList: true, subtree: true }. Debounce 150ms. Re-run _persifyContext + _persifyProposalSections on mutations.
+
+### W-43 Utilization Display
+
+- Formula: Math.round(committed / cap * 100) - verified 7/7 fixture (ADR-089)
+- Bar: Math.min(100, pct) - visually capped
+- Number: raw value preserved
+- Over-cap: .r2w-over-cap class + tooltip
+
+### Card Actions (D-02)
+
+- 2 primary actions per card (state-dependent)
+- Menu toggle for secondary actions
+- CSS: .pw14-mini hidden by default; shown when [data-r2w-primary="1"] or .is-menu-open
+- aria-expanded on menu button
+- Outside-click closes menu
+
+### TimeGrid (D-06)
+
+- _viewRenderers.timegrid exists but was unreachable
+- Core _defaultActivitiesTab hardcodes 4 views
+- _renderViewBarExtend exists but never called
+- Post-render injection appends 5th button
+
+### Proposal 3-step (D-05)
+
+- Activates only when .pw14-prop-head or .pw14-prop-actions exists
+- Step 1: stale + head + before/after
+- Step 2: details[open] changes/daily/impact/cancelled/history
+- Step 3: apply notice + actions + remaining
+- Empty state: r2w-empty-3step with 3-step explanation
+
+### Non-goals
+
+- No core file modification
+- No state mutation
+- No R.store.* call from polish layer
+- No workspace-v13.js removal (D-01 propose only)

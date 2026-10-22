@@ -1,70 +1,75 @@
-# Session Handoff (2026-10-16 · v0.5.1)
+# Session Handoff — Agent #19 → Agent #20
 
-## Status
+Date: 2026-10-19
+Schema: v22 (no bump). Version: v0.5.2 (no release).
 
-Schema: v22 (no bump).
-Version: **v0.5.1**.
-Phase U (Auto-Update Infrastructure) complete. End-to-end verified.
+## Completed this session
 
-## Session completed
+### M5 — Incremental Replan
 
-- Git init + .gitignore + first commit
-- GitHub remote (public): edrisshirvani1388-afk/internship-os
-- Legacy backup branch `legacy-v0.3.0-zip-update`
-- `release.iss` — Inno Setup template (parameterized)
-- `release.ps1` — full release automation
-- `release.cmd` — double-click wrapper
-- Backend: check-update (manifest-aware) + apply-update (silent installer)
-- Frontend: installerUrl + sha256 sent to backend
-- Installer excludes `data\` → user data preserved
-- v0.5.0 released + v0.5.1 released
-- End-to-end test: v0.5.0 → v0.5.1 auto-update — PASS
+- Progress detection from `state.residency.activities[]` (completed = read, planned = allocated).
+- Dedup key upgraded from `(day, book)` to `(day, book, pageRangeOverlap)` — critical bug fix.
+- Day capacity reduced by planned activity minutes (`[PATCH:m5-daycap]`).
+- Day locked (cap=0) when any planned activity exists (`[PATCH:m5-daylock]`).
+- UI: breakdown bars per book, "why N unused" diagnostic, checkbox multi-select, Add-Selected / Add-All / Remove / Remove-All, min/max clamp, Persian dates.
+
+### M6 — Final Integration
+
+- `R.plannerUI.open` routes to V7 (idempotent, legacy preserved at `_legacyOpen`).
+- Round-scoped planned activity exclusion (`[PATCH:m6-isolation]` + `[PATCH:m6-roundprop]`).
+- Test T7 strengthened into T7a/T7b/T7c.
+- 18/18 manual UI tests PASS.
+
+## Test baseline
+
+| Suite | Before M5 | After M6 |
+|---|---|---|
+| allocator | 25 | **25** |
+| input | 33 | **41** |
+| ui | 10 | **10** |
+| **total** | **68** | **76** |
+
+## Manual UI tests (18/18 PASS)
+
+1. Open from normal route → V7 modal
+2. `planId` correctly passed
+3. Dev floating button hidden by default
+4. Close (✕) works without error
+5. Generate → Add day → no confirm dialog
+6. Close → reopen → added day in green box
+7. Regenerate → added day not in proposal
+8. Add second day → both in green box
+9. Remove day → returns to proposal
+10. "از نو" → list refreshes
+11. Checkbox + Add-Selected + Add-All
+12. Min/max days + clamp (38-48)
+13. Breakdown bar (read/allocated/available) + legend
+14. "Why N unused" with sample dates
+15. Persian date display (۲۷ مهر not 1405/7/27)
+16. Back-to-settings button
+17. Console clean (only `[V7] route switched` on boot)
+18. Legacy fallback works
+
+## Bugs found & fixed
+
+1. Dedup key was `(day, book)` → false negatives → fixed to include pageRangeOverlap.
+2. `_inputMeta` was null after Add (fixed order).
+3. `_renderDayDiagHTML` was missing in `else` branch.
+4. Route switch had duplicate dev button (fixed by cleanup).
+5. T7 assertion too weak (`<=`) → split into T7a/T7b/T7c.
+
+## Known limitations
+
+1. Multiple enrollments for same book in same round → only one visible in `input.books` (design limit).
+2. Old activities without `plannedPageStart/End` → progress not counted (conservative).
+3. `_roundIdForBook` fallback → null when enrollment has wrong planId → conservative skip.
 
 ## Files changed
 
-- `release.iss` (NEW)
-- `release.ps1` (NEW)
-- `release.cmd` (NEW)
-- `update.json` (NEW, generated per release)
-- `server-dotnet/Program.cs` — check-update + apply-update rewritten
-- `app/app.js` — installerUrl + sha256 payload
-- `app/data.js` — updateUrl → manifest
-- `.gitignore` (NEW)
-- `VERSION`, `version.json` — bumped to 0.5.1
-- `docs/AUTO-UPDATE.md` (NEW)
-- `docs/DECISIONS.md` + ADR-059
-- `docs/SCHEMA.md` + Auto-Update section
-- `docs/ARCHITECTURE.md` + Auto-Update section
-- `docs/ROADMAP.md` + Phase U
-- `docs/CURRENT.md`, `docs/HANDOFF.md`
+- `app/residency/planner-input-v7.js`
+- `app/residency/planner-study-ui-v7.js`
 
-## Test baseline (F12)
+## Next
 
-All 18 suites green: 463/463 (unchanged from v0.4.2).
-
-## Manual E2E test (PASS)
-
-- v0.5.0 installed → «بررسی آپدیت» → «نسخه‌ی جدید: v0.5.1» →
-  «دانلود و نصب» → silent install → app reopened at v0.5.1 →
-  data/ intact.
-
-## Do Not Touch
-
-- `release.iss` AppId (breaks upgrade recognition)
-- `release.iss` `Excludes: "data\*,data"` (user data)
-- Manifest URL format (`releases/latest/download/update.json`)
-- Registry path `{B8F3A9D5-2E4C-4A1B-9F5D-1C7E3B8A6F2D}_is1`
-- All prior invariants (Food.db, snapshots, lazy-init, etc.)
-
-## Known follow-ups
-
-- No progress bar in update modal (ISSUE-XX)
-- No code signing (SmartScreen warning on new machines)
-- Versions < 0.5.1 must install v0.5.1 manually once
-- Draft release cleanup on network failure (manual)
-
-## Distribution
-
-- GitHub Releases: https://github.com/edrisshirvani1388-afk/internship-os/releases
-- Latest manifest: https://github.com/edrisshirvani1388-afk/internship-os/releases/latest/download/update.json
-- Developer: double-click `release.cmd`, type version, done.
+- Await Design Agent for Milestone 7 OR release approval.
+- Consider full 244-baseline regression before release.

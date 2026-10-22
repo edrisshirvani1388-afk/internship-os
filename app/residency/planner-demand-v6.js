@@ -10,29 +10,37 @@
 
   // ─── Already-studied pages from completed/partial study activities ───
   R.plannerDemand.computeStudiedPages = function (activities, bookId, roundId, enrollment, book, allEnrollments, allRounds) {
-    var fromActivities = 0;
-    (activities || []).forEach(function (a) {
-      if (!a) return;
-      if (a.kind !== "study") return;
-      if (a.bookId !== bookId) return;
-      if (a.roundId !== roundId) return;
-      if (a.actualPages == null) return;
-      if (a.status !== "completed" && a.status !== "partial" && a.status !== "in_progress") return;
-      fromActivities += (a.actualPages | 0);
-    });
+  /* [PATCH:f4b7-demand] Cross-round completed + plannedPages fallback */
+  var fromActivities = 0;
+  (activities || []).forEach(function (a) {
+    if (!a) return;
+    if (a.kind !== "study") return;
+    if (a.bookId !== bookId) return;
 
-    var fromBaseline = 0;
-    if (enrollment && book && R.baseline && R.baseline.resolveForEnrollment) {
-      try {
-        var eb = R.baseline.resolveForEnrollment(enrollment, book, allEnrollments || [], allRounds || []);
-        if (eb) fromBaseline = R.baseline.computePages(eb, book.totalPages);
-      } catch (e) {
-        console.warn("[planner.demand] baseline resolve failed:", e);
+    var isDone = (a.status === "completed" || a.status === "partial" || a.status === "in_progress");
+    if (!isDone) {
+      if (roundId && a.roundId !== roundId) return; /* planned scoped to round */
+      if (a.status === "planned") {
+        if (a.plannedPages != null) fromActivities += (a.plannedPages | 0);
       }
+      return;
     }
 
-    return fromActivities + fromBaseline;
-  };
+    var p = (a.actualPages != null && a.actualPages > 0) ? a.actualPages : (a.plannedPages || 0);
+    fromActivities += (p | 0);
+  });
+
+  var fromBaseline = 0;
+  if (enrollment && book && R.baseline && R.baseline.resolveForEnrollment) {
+    try {
+      var eb = R.baseline.resolveForEnrollment(enrollment, book, allEnrollments || [], allRounds || []);
+      if (eb) fromBaseline = R.baseline.computePages(eb, book.totalPages);
+    } catch (e) {
+      console.warn("[planner.demand] baseline resolve failed:", e);
+    }
+  }
+  return fromActivities + fromBaseline;
+};;
 
   R.plannerDemand.resolveStatus = function (enrollment, remaining, overage) {
     var mode = (enrollment && enrollment.mode) || "included";
@@ -105,7 +113,12 @@
       overagePages: overage,
       pagesPerHour: pagesPerHour,
       estimatedRemainingMinutes: estimatedMinutes,
-      studyOrder: (enrollment.studyOrder != null) ? enrollment.studyOrder : null,
+      studyOrder: (function () {
+        if (enrollment.studyOrder != null) return enrollment.studyOrder;
+        if (opts.bookIndex != null) return opts.bookIndex;
+        if (book && typeof book.createdAt === "number") return book.createdAt;
+        return null;
+      })(),
       bookPriority: book.priority || "normal",
       mode: enrollment.mode || "included",
       status: status
@@ -122,13 +135,25 @@
     var defaultSpeed = opts.defaultPagesPerHour || 20;
 
     var booksMap = {};
-    books.forEach(function (b) { if (b && b.id) booksMap[b.id] = b; });
+    var booksIndex = {};
+    books.forEach(function (b, bi) {
+      if (b && b.id) { booksMap[b.id] = b; booksIndex[b.id] = bi; }
+    });
     var roundsMap = {};
     rounds.forEach(function (r) { if (r && r.id) roundsMap[r.id] = r; });
 
     var demands = [];
+    var _seenKeys = {}; /* [PATCH:f9-dedup-safe] dedup by (bookId, roundId); safe for empty roundId */
     enrollments.forEach(function (e) {
       if (!e) return;
+      var _bk = e.bookId || "";
+      var _rd = e.roundId || "";
+      var _canDedup = (_bk !== "" && _rd !== "");
+      if (_canDedup) {
+        var _key = _bk + "::" + _rd;
+        if (_seenKeys[_key]) return;
+        _seenKeys[_key] = true;
+      }
       var b = booksMap[e.bookId];
       var r = roundsMap[e.roundId];
       if (!b || !r) return;
@@ -136,7 +161,8 @@
         activities: activities,
         defaultPagesPerHour: defaultSpeed,
         allEnrollments: enrollments,
-        allRounds: rounds
+        allRounds: rounds,
+        bookIndex: booksIndex[b.id]
       });
       if (d) demands.push(d);
     });

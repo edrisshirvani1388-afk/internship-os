@@ -31,6 +31,16 @@
     if (!Array.isArray(s.replanTriggers)) s.replanTriggers = [];
     return s.replanTriggers;
   }
+  /* [R2-A] Find task by id for provably-irrelevant detection */
+  function _findTaskById(id) {
+    if (!id) return null;
+    var s = _state();
+    if (!s || !Array.isArray(s.tasks)) return null;
+    for (var i = 0; i < s.tasks.length; i++) {
+      if (s.tasks[i] && s.tasks[i].id === id) return s.tasks[i];
+    }
+    return null;
+  }
 
   var REASON_LABELS = {
     shift_added: "کشیک اضافه شد",
@@ -296,19 +306,35 @@
     if (!planId) planId = _activePlanId();
     var list = _ensure() || [];
     var filtered = list.filter(function (t) { return t && t.planId === planId; });
+    /* [R2-A] Split provably-irrelevant (sleep auto) from relevant.
+       Ambiguous triggers (task deleted) are preserved per Design Agent. */
+    var relevant = [];
+    var provablyIrrelevant = [];
+    filtered.forEach(function (t) {
+      if (t.sourceType === "task" && t.sourceId) {
+        var task = _findTaskById(t.sourceId);
+        if (task && task._sleepAuto) {
+          provablyIrrelevant.push(t);
+          return;
+        }
+      }
+      relevant.push(t);
+    });
     var dates = {};
     var lastAt = 0;
-    filtered.forEach(function (t) {
+    relevant.forEach(function (t) {
       if (t.date) dates[t.date] = 1;
       if (t.at > lastAt) lastAt = t.at;
     });
     return {
       planId: planId,
-      needed: filtered.length > 0,
-      count: filtered.length,
-      reasons: filtered.slice(),
+      needed: relevant.length > 0,
+      count: relevant.length,
+      reasons: relevant.slice(),
       affectedDates: Object.keys(dates).sort(),
-      lastTriggeredAt: lastAt || null
+      lastTriggeredAt: lastAt || null,
+      _provablyIrrelevantCount: provablyIrrelevant.length,
+      _provablyIrrelevantIds: provablyIrrelevant.map(function (t) { return t.id; })
     };
   };
 
@@ -370,6 +396,8 @@
   RT.isRelevantTask = function (task) {
     if (!task) return false;
     if (task.sourceType === "residency_activity") return false;
+    /* [R2-A] Sleep tasks are routine auto-generated; must never trigger replan */
+    if (task._sleepAuto) return false;
     if (task.durationMinutes && task.durationMinutes > 0) return true;
     if (task.time) return true;
     return false;
@@ -414,6 +442,29 @@
     t("T6b: task with time relevant", RT.isRelevantTask({ time: "08:00" }));
     t("T6c: no-time/dur not relevant", !RT.isRelevantTask({ title: "reminder" }));
     t("T6d: residency_activity excluded", !RT.isRelevantTask({ durationMinutes: 60, sourceType: "residency_activity" }));
+
+    /* [R2-A] T6e-T6h: sleep auto + getStatus filtering */
+    t("T6e: _sleepAuto task NOT relevant (R2-A)", !RT.isRelevantTask({ durationMinutes: 60, time: "23:00", _sleepAuto: "night:sameday" }));
+    t("T6f: sleep task WITHOUT marker still relevant (avoid over-filter)", RT.isRelevantTask({ durationMinutes: 60, time: "23:00", areaId: "sleep" }));
+    t("T6g: notifyTaskChange with _sleepAuto does NOT create trigger", (function() {
+      RT.clearAll();
+      RT.notifyTaskChange({ id: "sl-mock-r2a", _sleepAuto: "night:sameday", areaId: "sleep", durationMinutes: 480, time: "22:00", title: "خواب" }, "task_completed");
+      var after = RT.getStatus().count;
+      RT.clearAll();
+      return after === 0;
+    })());
+    t("T6h: orphan trigger (task deleted) PRESERVED (R2-A)", (function() {
+      RT.clearAll();
+      var _mockState = window.__os.getState();
+      if (!Array.isArray(_mockState.tasks)) _mockState.tasks = [];
+      var task = { id: "test-orphan-r2a", title: "test", date: "1405/1/1", time: "08:00", durationMinutes: 60 };
+      _mockState.tasks.push(task);
+      RT.notifyTaskChange(task, "task_updated");
+      _mockState.tasks = _mockState.tasks.filter(function(t){ return t.id !== "test-orphan-r2a"; });
+      var st = RT.getStatus();
+      RT.clearAll();
+      return st.needed === true && st.count === 1 && st.reasons[0].sourceId === "test-orphan-r2a";
+    })());
 
     RT.clear();
     t("T7: clear → not needed", !RT.shouldReplan());

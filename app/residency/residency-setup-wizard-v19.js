@@ -198,6 +198,10 @@
 
   /* ─── وضعیت ─── */
   var _overlay = null;
+  var _closing = false;
+  var _committing = false;
+  var _confirmedExistingPlan = false;
+  var _stepLiveRegion = null;
   var _step = 0;
   var _draft = null;
   var _error = "";
@@ -214,6 +218,7 @@
     { id: "studyHours",       title: "ساعت‌های مطالعه",   icon: "⏰" },
     { id: "weekly",           title: "الگوی هفتگی",      icon: "🗓️" },
     { id: "rotations",        title: "چرخش‌ها",           icon: "🏥" },
+    { id: "dailyLife",        title: "برنامهٔ روزانه",    icon: "🍽️" },
     { id: "preview",          title: "بررسی برنامه",      icon: "🔍" },
     { id: "summary",          title: "جمع‌بندی",          icon: "✨" }
   ];
@@ -230,7 +235,8 @@
       enrollments: [],
       roundStrategy: { autoSuggested: false, totalDays: 0, distribution: [] },
       enrollmentBaselines: {},
-      readingStrategy: { mode: "sequential", rotationSize: 3, alternationDays: 1 }
+      readingStrategy: { mode: "sequential", rotationSize: 3, alternationDays: 1 },
+        dailyLifeSchedule: null
     };
   }
 
@@ -262,9 +268,45 @@
     }, 220);
   };
 
-  function _escHandler(e) {
+    function _requestClose(source) {
+    if (_closing) return;
+    var R = window.InternshipResidency;
+    var msg = "\u0645\u06CC\u200C\u062E\u0648\u0627\u06CC \u0631\u0627\u0647\u0646\u0645\u0627 \u0631\u0648 \u0628\u0628\u0646\u062F\u06CC\u061F \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0648\u0627\u0631\u062F\u0634\u062F\u0647 \u062F\u0631 \u0627\u06CC\u0646 \u062C\u0644\u0633\u0647 \u0630\u062E\u06CC\u0631\u0647 \u0646\u0645\u06CC\u200C\u0634\u0647.";
+    var opts = {
+      title: "\u0628\u0633\u062A\u0646 \u0631\u0627\u0647\u0646\u0645\u0627",
+      message: msg,
+      confirmText: "\u0628\u0633\u062A\u0646 \u0648 \u067E\u0627\u06A9 \u06A9\u0631\u062F\u0646",
+      cancelText: "\u0627\u062F\u0627\u0645\u0647 \u0628\u062F\u0647",
+      danger: true
+    };
+    if (R && R.dialog && typeof R.dialog.confirm === "function") {
+      _closing = true;
+      var p;
+      try { p = R.dialog.confirm(msg, opts); }
+      catch (e) { _closing = false; console.warn("[wiz] dialog threw:", e); return; }
+      if (p && typeof p.then === "function") {
+        p.then(function (ok) {
+          _closing = false;
+          if (ok) WZ.closeWizard();
+        }).catch(function (err) {
+          _closing = false;
+          console.warn("[wiz] dialog rejected:", err);
+        });
+        return;
+      }
+      if (typeof p === "function") {
+        p(function (ok) { _closing = false; if (ok) WZ.closeWizard(); });
+        return;
+      }
+      _closing = false;
+      console.warn("[wiz] dialog returned unexpected:", p);
+      return;
+    }
+    if (window.confirm(msg)) WZ.closeWizard();
+  }
+function _escHandler(e) {
     if (e.key === "Escape") {
-      if (confirm("می‌خوای راهنما رو ببندی؟ اطلاعات ذخیره نمی‌شه.")) WZ.closeWizard();
+      _requestClose("escape");
     }
   }
 
@@ -283,6 +325,7 @@
     else if (stepId === "studyHours")      body = _renderStudyHoursStep();
     else if (stepId === "weekly")          body = _renderWeeklyStep();
     else if (stepId === "rotations")       body = _renderRotationsStep();
+    else if (stepId === "dailyLife")       body = _renderDailyLifeStep();
     else if (stepId === "preview")         body = _renderFeasibilityPreview();
     else if (stepId === "summary")         body = _renderSummary();
 
@@ -385,13 +428,15 @@
         '<div class="r19-plan-grid">' +
           '<div class="r19-form-row">' +
             '<label class="r19-form-label">🎯 هدف اصلی‌ات چیه؟</label>' +
-            '<input type="text" class="r19-input" data-r19-plan-goal value="' + _esc(p.goal || "") + '" placeholder="قبولی در رشته قلب با نمره ۵۰۰">' +
+            '<input type="text" class="r19-input" id="wiz-inp-plan-goal" data-r19-plan-goal value="' + _esc(p.goal || "") + '" placeholder="قبولی در رشته قلب با نمره ۵۰۰">' +
             '<div class="r19-form-hint">این هدف بلندمدتته و بالای برنامه‌ت می‌مونه.</div>' +
+          '<div class="r19-field-err" id="wiz-err-plan-goal" role="alert" hidden></div>' +
           '</div>' +
           '<div class="r19-form-row">' +
             '<label class="r19-form-label">📌 عنوان برنامه</label>' +
-            '<input type="text" class="r19-input" data-r19-plan-title value="' + _esc(p.title || "") + '" placeholder="آزمون دستیاری ۱۴۰۷">' +
+            '<input type="text" class="r19-input" id="wiz-inp-plan-title" data-r19-plan-title value="' + _esc(p.title || "") + '" placeholder="آزمون دستیاری ۱۴۰۷">' +
             '<div class="r19-form-hint">این عنوان برنامه‌ی فعالته.</div>' +
+          '<div class="r19-field-err" id="wiz-err-plan-title" role="alert" hidden></div>' +
           '</div>' +
         '</div>' +
         '<div class="r19-form-row">' +
@@ -951,7 +996,20 @@
   function _renderStudyHoursStep() {
     var sh = _draft.studyHours;
     if (!sh) {
-      sh = { normal: 3, free: 5, beforeShift: 2, shift: 1, afterShift: 2 };
+      var _stA = _state();
+      var _rsA = _stA && _stA.residency;
+      var _dcA = _rsA && _rsA.settings && _rsA.settings.defaultCapacity;
+      function _minsToH(mins, fb) {
+        if (typeof mins === "number" && mins >= 0) return Math.round(mins / 60 * 10) / 10;
+        return fb;
+      }
+      sh = {
+        normal:      _minsToH(_dcA && _dcA.normal,     4),
+        free:        _minsToH(_dcA && _dcA.free,       5),
+        beforeShift: _minsToH(_dcA && _dcA.preShift,   1),
+        shift:       _minsToH(_dcA && _dcA.shift,      0),
+        afterShift:  _minsToH(_dcA && _dcA.postShift,  0.5)
+      };
       _draft.studyHours = sh;
     }
     var rows = [
@@ -1094,6 +1152,454 @@
       '</div>' +
       _navButtons(true, "بعدی", false) +
     '</div>';
+  }
+  function _timePickerHTML(hour, minute, attr, idx, isEnd) {
+    hour = (typeof hour === "number" && hour >= 0) ? hour : 0;
+    minute = (typeof minute === "number" && minute >= 0) ? minute : 0;
+    var hMax = isEnd ? 24 : 23;
+    var hOpts = "";
+    for (var i = 0; i <= hMax; i++) {
+      var v = (i < 10 ? "0" : "") + i;
+      hOpts += '<option value="' + v + '"' + (i === hour ? " selected" : "") + '>' + v + '</option>';
+    }
+    var mOpts = "";
+    for (var j = 0; j < 60; j += 5) {
+      var v2 = (j < 10 ? "0" : "") + j;
+      mOpts += '<option value="' + v2 + '"' + (j === minute ? " selected" : "") + '>' + v2 + '</option>';
+    }
+    return '<div class="dls-tp">' +
+      '<select class="dls-tp-sel" data-dls-tp-h="' + attr + '|' + idx + '">' + hOpts + '</select>' +
+      '<span class="dls-tp-sep">:</span>' +
+      '<select class="dls-tp-sel" data-dls-tp-m="' + attr + '|' + idx + '">' + mOpts + '</select>' +
+    '</div>';
+  }
+
+  function _parseTime(t) {
+    var out = { h: 0, m: 0 };
+    if (!t || typeof t !== "string") return out;
+    var p = t.split(":");
+    if (p.length < 2) return out;
+    var h = parseInt(p[0], 10);
+    var m = parseInt(p[1], 10);
+    if (!isNaN(h) && h >= 0 && h <= 24) out.h = h;
+    if (!isNaN(m) && m >= 0 && m <= 59) out.m = m;
+    return out;
+  }
+
+  function _renderDailyLifeStep() {
+    var s = _state();
+    var rs = s && s.residency;
+    var saved = (rs && rs.settings && rs.settings.dailyLifeSchedule) || null;
+    if (!_draft.dailyLifeSchedule) {
+      _draft.dailyLifeSchedule = saved ? JSON.parse(JSON.stringify(saved)) : {
+        version: 1,
+        studyWindow: { startTime: "06:30", endTime: "23:00" },
+        weeklyBlocks: []
+      };
+    }
+    var dls = _draft.dailyLifeSchedule;
+    var rotations = (s && Array.isArray(s.rotations)) ? s.rotations : [];
+    var wd = [
+      { key: "saturday",  short: "ش" },
+      { key: "sunday",    short: "ی" },
+      { key: "monday",    short: "د" },
+      { key: "tuesday",   short: "س" },
+      { key: "wednesday", short: "چ" },
+      { key: "thursday",  short: "پ" },
+      { key: "friday",    short: "ج" }
+    ];
+
+    var swStart = _parseTime(dls.studyWindow.startTime);
+    var swEnd = _parseTime(dls.studyWindow.endTime);
+
+    function _pCard(preset, icon, label, desc, isActive) {
+      return '<button type="button" class="dls-preset' + (isActive ? ' is-active' : '') + '" data-dls-preset="' + preset + '">' +
+        '<span class="dls-preset-icon">' + icon + '</span>' +
+        '<span class="dls-preset-label">' + label + '</span>' +
+        '<span class="dls-preset-desc">' + desc + '</span>' +
+      '</button>';
+    }
+    var hasBreakfast = dls.weeklyBlocks.some(function(b){ return b.kind === "meal" && b.title === "صبحانه"; });
+    var hasLunch = dls.weeklyBlocks.some(function(b){ return b.kind === "meal" && b.title === "ناهار"; });
+    var hasDinner = dls.weeklyBlocks.some(function(b){ return b.kind === "meal" && b.title === "شام"; });
+    var hasSleep = dls.weeklyBlocks.some(function(b){ return b.kind === "sleep"; });
+    var hasHospital = dls.weeklyBlocks.some(function(b){ return b.kind === "hospital"; });
+
+    var presetsHTML =
+      '<div class="dls-presets">' +
+        _pCard("meal-breakfast", "🍳", "صبحانه", "۰۷:۰۰ تا ۰۷:۳۰", hasBreakfast) +
+        _pCard("meal-lunch", "🍽️", "ناهار", "۱۳:۰۰ تا ۱۳:۴۵", hasLunch) +
+        _pCard("meal-dinner", "🍲", "شام", "۱۹:۳۰ تا ۲۰:۱۵", hasDinner) +
+        _pCard("sleep", "😴", "خواب شب", "۲۳:۰۰ تا ۰۶:۳۰", hasSleep) +
+        _pCard("hospital", "🏥", "بیمارستان", "انتخاب چرخش", hasHospital) +
+      '</div>';
+
+    var blocksHTML = dls.weeklyBlocks.map(function (b, idx) {
+      var chips = wd.map(function (d) {
+        var on = b.daysOfWeek.indexOf(d.key) !== -1;
+        return '<button type="button" class="dls-day-chip' + (on ? ' is-active' : '') + '" data-dls-wd="' + idx + '|' + d.key + '">' + d.short + '</button>';
+      }).join("");
+      var kindLabel = { sleep: "😴 خواب", meal: "🍽️ وعده", hospital: "🏥 بیمارستان", other: "📌 سایر" }[b.kind] || b.kind;
+      var bStart = _parseTime(b.startTime);
+      var bEnd = _parseTime(b.endTime);
+      var rotRow = "";
+      if (b.kind === "hospital") {
+        var opts = '<option value="">— انتخاب چرخش —</option>' + rotations.map(function(r) {
+          return '<option value="' + _esc(r.id) + '"' + (b.rotationId === r.id ? ' selected' : '') + '>' + _esc(r.title) + '</option>';
+        }).join("");
+        rotRow = '<div class="dls-rot-row">' +
+          '<span class="dls-rot-label">چرخش مربوطه:</span>' +
+          '<select data-dls-rot="' + idx + '" class="dls-input" style="flex:1;">' + opts + '</select>' +
+        '</div>' +
+        '<p class="dls-rot-hint">با انتخاب چرخش، روزهای فعال از مرحله «چرخش‌ها» به‌طور خودکار پر می‌شن.</p>';
+      }
+      return '<div class="dls-block' + (b.enabled === false ? ' is-disabled' : '') + '">' +
+        '<div class="dls-block-head">' +
+          '<span class="dls-block-kind">' + kindLabel + '</span>' +
+          '<input type="text" class="dls-input dls-block-title" data-dls-title="' + idx + '" value="' + _esc(b.title) + '" placeholder="عنوان">' +
+          '<label class="dls-toggle"><input type="checkbox" data-dls-enabled="' + idx + '"' + (b.enabled !== false ? ' checked' : '') + '><span>فعال</span></label>' +
+          '<button type="button" class="dls-block-del" data-dls-remove="' + idx + '">✕</button>' +
+        '</div>' +
+        '<div class="dls-block-row">' +
+          '<span class="dls-tp-lbl">از</span>' +
+          _timePickerHTML(bStart.h, bStart.m, "block-start", idx, false) +
+          '<span class="dls-tp-lbl">تا</span>' +
+          _timePickerHTML(bEnd.h, bEnd.m, "block-end", idx, true) +
+        '</div>' +
+        rotRow +
+        '<div class="dls-days">' + chips + '</div>' +
+      '</div>';
+    }).join("");
+
+    var previewHTML = "";
+    try {
+      if (dls.weeklyBlocks.length === 0) {
+        previewHTML = '<div class="dls-section">' +
+          '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+          '<div class="dls-impact-legend">' +
+            'هنوز تعهدی اضافه نکردی. وقتی یک تعهد (ناهار، شام، بیمارستان، ...) اضافه کنی، ' +
+            'اینجا جدولی می‌بینی که نشون می‌ده چقدر از ظرفیت مطالعه‌ی هر روز کم می‌شه.' +
+          '</div>' +
+        '</div>';
+      } else {
+        previewHTML = _renderDlsImpactPreviewFromDraft(dls);
+      }
+    } catch (e) { console.error("[dls] preview error:", e); }
+
+    return '<div class="r19-step">' +
+      _stepIntro("🍽️", "برنامهٔ روزانه و تعهدات زندگی", "تعهدات تکرارشونده‌ات رو مشخص کن. هر تعهد از ظرفیت مطالعه‌ی همان روز کسر می‌شه — تسک جدا نمی‌سازه.") +
+      _errorBox() +
+      '<div class="dls-section">' +
+        '<div class="dls-section-title">⏰ بازه‌ی مطالعه‌ی روزانه</div>' +
+        '<p class="dls-section-hint">تعهداتی که خارج از این بازه باشن (مثل خواب شب) از ظرفیت کسر نمی‌شن.</p>' +
+        '<div class="dls-window-row">' +
+          '<span class="dls-tp-lbl">از</span>' +
+          _timePickerHTML(swStart.h, swStart.m, "sw-start", -1, false) +
+          '<span class="dls-tp-lbl">تا</span>' +
+          _timePickerHTML(swEnd.h, swEnd.m, "sw-end", -1, true) +
+        '</div>' +
+      '</div>' +
+      '<div class="dls-section">' +
+        '<div class="dls-section-title">⚡ افزودن سریع</div>' +
+        '<p class="dls-section-hint">روی کارت بزن تا با مقدار پیش‌فرض اضافه بشه. بعد می‌تونی تغییر بدی.</p>' +
+        presetsHTML +
+      '</div>' +
+      (blocksHTML ? '<div class="dls-section"><div class="dls-section-title">📋 تعهدات تعریف‌شده (' + _fa(dls.weeklyBlocks.length) + ')</div>' + blocksHTML + '</div>' : '') +
+      '<div class="dls-section">' +
+        '<button type="button" class="dls-add-btn" data-dls-add>➕ افزودن تعهد سفارشی</button>' +
+      '</div>' +
+      previewHTML +
+      '<div class="r19-tip"><span>💡</span><span>اگر تعهدی نداری، «بعدی» رو بزن.</span></div>' +
+      _navButtons(true, "بعدی", false) +
+    '</div>';
+  }
+
+  function _renderDlsImpactPreview(dls, plan, rs) {
+    var LIB = window.InternshipLib;
+    if (!LIB || !LIB.date) return "";
+    var rounds = (rs.rounds || []).filter(function(r){ return r && r.planId === plan.id; });
+    if (rounds.length === 0) return "";
+    var minDate = rounds[0].startDate;
+    for (var i = 1; i < rounds.length; i++) {
+      if (LIB.date.compareJalaliDate(rounds[i].startDate, minDate) < 0) minDate = rounds[i].startDate;
+    }
+    if (!minDate) return "";
+    var p = LIB.date.parseJalali(minDate);
+    if (!p) return "";
+    var samples = [];
+    [0, 14, 28].forEach(function(off) {
+      var d = LIB.date.addJalaliDays(p.jy, p.jm, p.jd, off);
+      var dk = LIB.date.dateKey(d.jy, d.jm, d.jd);
+      if (LIB.date.compareJalaliDate(dk, plan.examDate) < 0) samples.push(dk);
+    });
+    if (samples.length === 0) return "";
+    var rows = samples.map(function(date) {
+      var ctxs = window.InternshipResidency.calendar.getResidencyCalendarContext(date, date, plan.id);
+      var ctx = ctxs && ctxs[0];
+      if (!ctx) return "";
+      var dayType = ctx.dayType || "normal";
+      var keyMap = { normal: "normal", free: "free", off: "off", pre_shift: "preShift", shift: "shift", post_shift: "postShift" };
+      var capKey = keyMap[dayType] || "normal";
+      var userCap = (rs.settings && rs.settings.defaultCapacity && rs.settings.defaultCapacity[capKey] != null)
+        ? rs.settings.defaultCapacity[capKey] : null;
+      var reservePct = (rs.settings && typeof rs.settings.reservePercent === "number") ? rs.settings.reservePercent : 10;
+      var base = userCap !== null ? Math.max(0, userCap - Math.floor(userCap * reservePct / 100)) : 0;
+      var deduction = 0;
+      try { deduction = _computeDlsDeduction(date, dls); } catch (e) {}
+      var effective = Math.max(0, base - deduction);
+      var dayLabel = { normal: "عادی", free: "تعطیل", off: "آف", pre_shift: "قبل کشیک", shift: "کشیک", post_shift: "بعد کشیک" }[dayType] || dayType;
+      return '<tr>' +
+        '<td>' + _fa(date) + '</td>' +
+        '<td>' + dayLabel + '</td>' +
+        '<td>' + _fa(base) + ' د</td>' +
+        '<td>' + (deduction > 0 ? '−' + _fa(deduction) + ' د' : '۰') + '</td>' +
+        '<td class="' + (effective === 0 ? 'is-zero' : 'is-positive') + '">' + _fa(effective) + ' د</td>' +
+      '</tr>';
+    }).join("");
+    return '<div class="dls-section">' +
+      '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+      '<div class="dls-impact-legend">' +
+        '<strong>این جدول چیه؟</strong> برای ۳ روز نمونه از بازه‌ی مطالعه‌ت نشون می‌ده که تعهدات چقدر از ظرفیت مطالعه کم می‌کنن.<br>' +
+        '<strong>ظرفیت:</strong> زمان مطالعه‌ی خام اون روز (بعد از کسر ۱۰٪ احتیاط).<br>' +
+        '<strong>کسر:</strong> مجموع دقیقه‌هایی که تعهدات با بازه‌ی مطالعه هم‌پوشانی دارن.<br>' +
+        '<strong>مؤثر:</strong> ظرفیت واقعی مطالعه (ظرفیت − کسر). اگر ۰ باشه یعنی اون روز عملاً مطالعه نمی‌شه.' +
+      '</div>' +
+      '<table class="dls-impact-table">' +
+        '<thead><tr><th>تاریخ</th><th>نوع روز</th><th>ظرفیت</th><th>کسر</th><th>مؤثر</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>' +
+    '</div>';
+  }
+  function _renderDlsImpactPreviewFromDraft(dls) {
+    var LIB = window.InternshipLib;
+    if (!LIB || !LIB.date) return "";
+
+    var examDate = _draft.plan && _draft.plan.examDate ? _draft.plan.examDate.trim() : "";
+    if (!examDate) {
+      return '<div class="dls-section">' +
+        '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+        '<div class="dls-impact-legend" style="border-right-color:rgba(251,191,36,.4);background:rgba(251,191,36,.06);">' +
+          '⚠️ برای دیدن پیش‌نمایش، ابتدا تاریخ آزمون را در مرحله «برنامه» وارد کن.' +
+        '</div>' +
+      '</div>';
+    }
+    if (!_draft.rounds || _draft.rounds.length === 0) {
+      return '<div class="dls-section">' +
+        '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+        '<div class="dls-impact-legend" style="border-right-color:rgba(251,191,36,.4);background:rgba(251,191,36,.06);">' +
+          '⚠️ برای دیدن پیش‌نمایش، ابتدا دوره‌ها را در مرحله «دوره‌ها» تعریف کن.' +
+        '</div>' +
+      '</div>';
+    }
+    var minDate = null;
+    for (var i = 0; i < _draft.rounds.length; i++) {
+      var r = _draft.rounds[i];
+      if (!r || !r.startDate) continue;
+      if (!minDate || LIB.date.compareJalaliDate(r.startDate, minDate) < 0) minDate = r.startDate;
+    }
+    if (!minDate) {
+      return '<div class="dls-section">' +
+        '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+        '<div class="dls-impact-legend" style="border-right-color:rgba(251,191,36,.4);background:rgba(251,191,36,.06);">' +
+          '⚠️ دوره‌ها تاریخ شروع ندارند.' +
+        '</div>' +
+      '</div>';
+    }
+
+    var wdMap = { "شنبه":"saturday","یک‌شنبه":"sunday","یکشنبه":"sunday","دوشنبه":"monday","سه‌شنبه":"tuesday","سه شنبه":"tuesday","چهارشنبه":"wednesday","پنج‌شنبه":"thursday","پنجشنبه":"thursday","جمعه":"friday" };
+
+    function _wkOf(date) {
+      var pp = LIB.date.parseJalali(date);
+      if (!pp) return null;
+      var nm = LIB.date.weekdayName(pp.jy, pp.jm, pp.jd);
+      return wdMap[nm] || null;
+    }
+
+    function _baseCap(date) {
+      var st = _state();
+      var rsx = st && st.residency;
+      var wk = _wkOf(date);
+      var dayType = (_draft.weeklyPattern && wk && _draft.weeklyPattern[wk]) || "normal";
+      var keyMap = { normal: "normal", free: "free", off: "off", pre_shift: "preShift", shift: "shift", post_shift: "postShift" };
+      var capKey = keyMap[dayType] || "normal";
+      var dc = rsx && rsx.settings && rsx.settings.defaultCapacity;
+      var minutes = dc && (typeof dc[capKey] === "number") ? dc[capKey] : null;
+      if (minutes == null) {
+        var hours = (dayType === "free") ? ((_draft.studyHours && _draft.studyHours.free) || 5) : ((_draft.studyHours && _draft.studyHours.normal) || 3);
+        minutes = Math.round(hours * 60);
+      }
+      var reservePct = (rsx && rsx.settings && typeof rsx.settings.reservePercent === "number") ? rsx.settings.reservePercent : 10;
+      var reserve = Math.floor(minutes * reservePct / 100);
+      return { raw: minutes, reserve: reserve, base: Math.max(0, minutes - reserve), dayType: dayType };
+    }
+
+    var startP = LIB.date.parseJalali(minDate);
+    if (!startP) return "";
+    var samples = [];
+    [0, 14, 28].forEach(function(off) {
+      var d = LIB.date.addJalaliDays(startP.jy, startP.jm, startP.jd, off);
+      var dk = LIB.date.dateKey(d.jy, d.jm, d.jd);
+      if (LIB.date.compareJalaliDate(dk, examDate) < 0) samples.push(dk);
+    });
+    if (samples.length === 0) {
+      return '<div class="dls-section">' +
+        '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+        '<div class="dls-impact-legend">بازه‌ی مطالعه خالی است.</div>' +
+      '</div>';
+    }
+
+    var swStartP = _parseTime(dls.studyWindow.startTime);
+    var swEndP = _parseTime(dls.studyWindow.endTime);
+    var swSMin = swStartP.h * 60 + swStartP.m;
+    var swEMin = swEndP.h * 60 + swEndP.m;
+    var windowSize = Math.max(0, swEMin - swSMin);
+
+    var rows = samples.map(function(date) {
+      var bc = _baseCap(date);
+      var ded = 0;
+      try { ded = _computeDlsDeduction(date, dls); } catch (e) {}
+      var windowAvail = Math.max(0, windowSize - ded);
+      var eff = Math.min(bc.base, windowAvail);
+      var binding = (windowAvail < bc.base) ? "window" : "cap";
+      var lbl = bc.dayType === "free" ? "تعطیل" : "عادی";
+      var effClass = (eff === 0) ? 'is-zero' : 'is-positive';
+      var bindingNote = (binding === "window")
+        ? '<span style="color:#fbbf24;font-size:10px;margin-right:4px;">⏱ پنجره محدود</span>'
+        : '';
+      return '<tr>' +
+        '<td>' + _fa(date) + '</td>' +
+        '<td>' + lbl + '</td>' +
+        '<td>' + _fa(bc.base) + ' د</td>' +
+        '<td>' + _fa(windowSize) + ' − ' + (ded > 0 ? _fa(ded) : '۰') + ' = <strong>' + _fa(windowAvail) + ' د</strong></td>' +
+        '<td class="' + effClass + '">' + bindingNote + _fa(eff) + ' د</td>' +
+      '</tr>';
+    }).join("");
+
+    return '<div class="dls-section">' +
+      '<div class="dls-section-title">📊 پیش‌نمایش اثر تعهدات</div>' +
+      '<div class="dls-impact-legend">' +
+        '<strong>منطق محاسبه:</strong> مؤثر = min(سقف روز، پنجره‌ی آزاد)<br>' +
+        '<strong>سقف روز:</strong> حداکثر مطالعه‌ی روز عادی/تعطیل (از مرحله‌ی «ساعت‌های مطالعه»).<br>' +
+        '<strong>پنجره آزاد:</strong> مدت بازه‌ی مطالعه (۰۶:۳۰ تا ۲۳:۰۰ = ۹۹۰ د) منهای تعهدات.<br>' +
+        '<strong>چرا مؤثر = سقف؟</strong> اگر پنجره‌ی آزاد هنوز بیشتر از سقف روز باشد، تعهدات محدودکننده نیستند. تعهدات فقط وقتی اثر می‌گذارند که پنجره‌ی آزاد کمتر از سقف روز شود.' +
+      '</div>' +
+      '<table class="dls-impact-table">' +
+        '<thead><tr><th>تاریخ</th><th>نوع</th><th>سقف روز</th><th>پنجره − تعهدات = آزاد</th><th>مؤثر</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>' +
+    '</div>';
+  }
+
+  function _computeDlsDeduction(date, dls) {
+    if (!dls || !dls.studyWindow || !Array.isArray(dls.weeklyBlocks)) return 0;
+    var LIB = window.InternshipLib;
+    if (!LIB || !LIB.date) return 0;
+    function _t2m(t) {
+      if (!t || typeof t !== "string") return null;
+      var pp = t.split(":");
+      if (pp.length !== 2) return null;
+      var h = parseInt(pp[0], 10), mm = parseInt(pp[1], 10);
+      if (isNaN(h) || isNaN(mm)) return null;
+      return h * 60 + mm;
+    }
+    function _wk(dt) {
+      var pp = LIB.date.parseJalali(dt);
+      if (!pp) return null;
+      var nm = LIB.date.weekdayName(pp.jy, pp.jm, pp.jd);
+      var map = { "شنبه":"saturday","یک‌شنبه":"sunday","یکشنبه":"sunday","دوشنبه":"monday","سه‌شنبه":"tuesday","سه شنبه":"tuesday","چهارشنبه":"wednesday","پنج‌شنبه":"thursday","پنجشنبه":"thursday","جمعه":"friday" };
+      return map[nm] || null;
+    }
+    var swS = _t2m(dls.studyWindow.startTime);
+    var swE = _t2m(dls.studyWindow.endTime);
+    if (swS == null || swE == null || swS >= swE) return 0;
+    var today = _wk(date);
+    var prevDate = null;
+    var pp = LIB.date.parseJalali(date);
+    if (pp) {
+      var pr = LIB.date.addJalaliDays(pp.jy, pp.jm, pp.jd, -1);
+      prevDate = LIB.date.dateKey(pr.jy, pr.jm, pr.jd);
+    }
+    var prevWd = prevDate ? _wk(prevDate) : null;
+    var intervals = [];
+    dls.weeklyBlocks.forEach(function(b) {
+      if (!b || b.enabled === false) return;
+      if (!Array.isArray(b.daysOfWeek) || b.daysOfWeek.length === 0) return;
+      var bS = _t2m(b.startTime), bE = _t2m(b.endTime);
+      if (bS == null || bE == null || bS === bE) return;
+      var overnight = bE <= bS;
+      if (today && b.daysOfWeek.indexOf(today) !== -1) {
+        if (!overnight) {
+          var s1 = Math.max(bS, swS), e1 = Math.min(bE, swE);
+          if (e1 > s1) intervals.push({ start: s1, end: e1 });
+        } else {
+          var s2 = Math.max(bS, swS), e2 = swE;
+          if (e2 > s2) intervals.push({ start: s2, end: e2 });
+        }
+      }
+      if (overnight && prevWd && b.daysOfWeek.indexOf(prevWd) !== -1) {
+        var s3 = swS, e3 = Math.min(bE, swE);
+        if (e3 > s3) intervals.push({ start: s3, end: e3 });
+      }
+    });
+    if (intervals.length === 0) return 0;
+    intervals.sort(function(a,b){ return a.start - b.start; });
+    var merged = [intervals[0]];
+    for (var i = 1; i < intervals.length; i++) {
+      var last = merged[merged.length - 1];
+      if (intervals[i].start <= last.end) last.end = Math.max(last.end, intervals[i].end);
+      else merged.push(intervals[i]);
+    }
+    var tot = 0;
+    merged.forEach(function(r){ tot += (r.end - r.start); });
+    return tot;
+  }
+
+  function _addDlsPreset(preset) {
+    if (!_draft.dailyLifeSchedule) return;
+    var dls = _draft.dailyLifeSchedule;
+    function mkid() { return "dls-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,6); }
+    var all = ["saturday","sunday","monday","tuesday","wednesday","thursday","friday"];
+    if (preset === "meal-breakfast") {
+      if (dls.weeklyBlocks.some(function(b){ return b.kind === "meal" && b.title === "صبحانه"; })) return;
+      dls.weeklyBlocks.push({ id: mkid(), kind: "meal", title: "صبحانه", daysOfWeek: all.slice(), startTime: "07:00", endTime: "07:30", enabled: true });
+    } else if (preset === "meal-lunch") {
+      if (dls.weeklyBlocks.some(function(b){ return b.kind === "meal" && b.title === "ناهار"; })) return;
+      dls.weeklyBlocks.push({ id: mkid(), kind: "meal", title: "ناهار", daysOfWeek: ["saturday","sunday","monday","tuesday","wednesday"], startTime: "13:00", endTime: "13:45", enabled: true });
+    } else if (preset === "meal-dinner") {
+      if (dls.weeklyBlocks.some(function(b){ return b.kind === "meal" && b.title === "شام"; })) return;
+      dls.weeklyBlocks.push({ id: mkid(), kind: "meal", title: "شام", daysOfWeek: all.slice(), startTime: "19:30", endTime: "20:15", enabled: true });
+    } else if (preset === "sleep") {
+      if (dls.weeklyBlocks.some(function(b){ return b.kind === "sleep"; })) return;
+      dls.weeklyBlocks.push({ id: mkid(), kind: "sleep", title: "خواب شب", daysOfWeek: all.slice(), startTime: "23:00", endTime: "06:30", enabled: true });
+    } else if (preset === "hospital") {
+      dls.weeklyBlocks.push({ id: mkid(), kind: "hospital", title: "بیمارستان", daysOfWeek: ["saturday","sunday","monday","tuesday","wednesday"], startTime: "08:00", endTime: "14:00", enabled: true, rotationId: "" });
+    }
+  }
+
+  function _dlsValidate() {
+    var dls = _draft.dailyLifeSchedule;
+    if (!dls) return true;
+    var swS = dls.studyWindow.startTime;
+    var swE = dls.studyWindow.endTime;
+    if (!/^\d{2}:\d{2}$/.test(swS) || !/^\d{2}:\d{2}$/.test(swE)) {
+      _error = "ساعت بازه‌ی مطالعه معتبر نیست."; return false;
+    }
+    if (swS >= swE) {
+      _error = "شروع بازه‌ی مطالعه باید قبل از پایان باشه."; return false;
+    }
+    for (var i = 0; i < dls.weeklyBlocks.length; i++) {
+      var b = dls.weeklyBlocks[i];
+      if (!/^\d{2}:\d{2}$/.test(b.startTime) || !/^\d{2}:\d{2}$/.test(b.endTime)) {
+        _error = "ساعت تعهد " + (i+1) + " معتبر نیست."; return false;
+      }
+      if (b.startTime === b.endTime) {
+        _error = "تعهد " + (i+1) + " شروع و پایان یکسان داره."; return false;
+      }
+      if (!Array.isArray(b.daysOfWeek) || b.daysOfWeek.length === 0) {
+        _error = "تعهد " + (i+1) + " حداقل یک روز هفته لازم داره."; return false;
+      }
+    }
+    return true;
   }
 
 
@@ -1502,7 +2008,7 @@
         '<span>هر وقت کشیک‌هات رو توی تقویم وارد کردی، می‌تونی از داخل اپ (پلنر → بازبرنامه‌ریزی) برنامه رو خودکار بازچینی کنی.</span>' +
       '</div>' +
       '<div class="r19-actions r19-actions-center" style="margin-top:20px">' +
-        '<button class="r19-btn r19-btn-primary r19-btn-large" type="button" data-r19-commit>✅ تأیید و ذخیره</button>' +
+        '<button class="r19-btn r19-btn-primary r19-btn-large" type="button" data-r19-commit>\u0633\u0627\u062E\u062A \u0628\u0631\u0646\u0627\u0645\u0647</button>' +
         '<button class="r19-btn r19-btn-ghost" type="button" data-r19-back>→ برگشت</button>' +
       '</div>' +
     '</div>';
@@ -1537,7 +2043,7 @@
 
   function _errorBox() {
     if (!_error) return "";
-    return '<div class="r19-error r19-error-anim">❌ ' + _esc(_error) + '</div>';
+    return '<div class="r19-error r19-error-anim" id="wiz-error-box" role="alert" aria-live="assertive">❌ ' + _esc(_error) + '</div>';
   }
 
   function _navButtons(showBack, nextLabel, nextDisabled) {
@@ -1627,6 +2133,9 @@
       // مرحله اختیاریه — هیچ اعتبارسنجی نیاز نیست
       return true;
     }
+    if (stepId === "dailyLife") {
+      return _dlsValidate();
+    }
 
     return true;
   }
@@ -1635,7 +2144,7 @@
   function _commit() {
     if (!_validateStep()) { _render(); return; }
     var s = _state();
-    if (!s || !s.residency) { _error = "state یافت نشد."; _render(); return; }
+    if (!s || !s.residency) { _error = "\u0648\u0636\u0639\u06CC\u062A \u0628\u0631\u0646\u0627\u0645\u0647 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A. \u0644\u0637\u0641\u0627\u064B \u0635\u0641\u062D\u0647 \u0631\u0627 \u062F\u0648\u0628\u0627\u0631\u0647 \u0628\u0627\u0632 \u06A9\u0646\u06CC\u062F."; _render(); return; }
 
     try {
       var goalText = (_draft.plan.goal || "").trim();
@@ -1707,23 +2216,28 @@
       });
 
       var enrollCount = 0;
-      _draft.enrollments.forEach(function (e) {
+      // [PATCH:study-order] assign studyOrder so sequential fill works
+      var _bookOrderMap = {};
+      _draft.books.forEach(function (b, bi) { _bookOrderMap[b.tempId] = bi; });
+      _draft.enrollments.forEach(function (e, eIdx) {
         var realRoundId = roundMap[e.roundTempId];
         var realBookId = bookMap[e.bookTempId];
         if (!realRoundId || !realBookId) return;
         var baselineKey = e.roundTempId + "|" + e.bookTempId;
         var baseline = _draft.enrollmentBaselines ? _draft.enrollmentBaselines[baselineKey] : null;
+        var _bookIdx = (_bookOrderMap[e.bookTempId] != null) ? _bookOrderMap[e.bookTempId] : eIdx;
         var enr = R.store.addEnrollment({
           roundId: realRoundId,
           bookId: realBookId,
           mode: e.mode || "included",
           targetCoveragePercent: e.targetCoveragePercent || 100,
-          initialStudyBaseline: baseline || null
+          initialStudyBaseline: baseline || null,
+          studyOrder: _bookIdx
         });
         if (enr) enrollCount++;
       });
 
-      // ═══ ذخیره‌ی ساعت‌های مطالعه در settings ═══
+      // ═══ ذخیره‌ی ساعت‌های مطالعه + همگام‌سازی defaultCapacity ═══
       if (_draft.studyHours) {
         if (!s.residency.settings) s.residency.settings = {};
         s.residency.settings.studyHoursByDayType = {
@@ -1732,6 +2246,41 @@
           beforeShift: _draft.studyHours.beforeShift || 0,
           shift:       _draft.studyHours.shift       || 0,
           afterShift:  _draft.studyHours.afterShift  || 0
+        };
+        // [PATCH:studyHours-sync] mirror to defaultCapacity (minutes)
+        if (!s.residency.settings.defaultCapacity) s.residency.settings.defaultCapacity = {};
+        var _dcS = s.residency.settings.defaultCapacity;
+        _dcS.normal    = Math.round((_draft.studyHours.normal      || 0) * 60);
+        _dcS.free      = Math.round((_draft.studyHours.free        || 0) * 60);
+        _dcS.preShift  = Math.round((typeof _draft.studyHours.beforeShift === "number" ? _draft.studyHours.beforeShift : 1) * 60);
+        _dcS.shift     = Math.round((_draft.studyHours.shift       || 0) * 60);
+        _dcS.postShift = Math.round((typeof _draft.studyHours.afterShift === "number" ? _draft.studyHours.afterShift : 0.5) * 60);
+      }
+
+      // [PATCH:dailylife-save]
+      if (_draft.dailyLifeSchedule) {
+        if (!s.residency.settings) s.residency.settings = {};
+        var _dlsSave = _draft.dailyLifeSchedule;
+        var _wdValid = ["saturday","sunday","monday","tuesday","wednesday","thursday","friday"];
+        var _cleanBlocks = (_dlsSave.weeklyBlocks || []).filter(function(b) {
+          return b && b.startTime && b.endTime && b.startTime !== b.endTime &&
+                 Array.isArray(b.daysOfWeek) && b.daysOfWeek.length > 0;
+        }).map(function(b) {
+          return {
+            id: b.id || ("dls-" + Date.now().toString(36)),
+            kind: ["sleep","meal","hospital","other"].indexOf(b.kind) !== -1 ? b.kind : "other",
+            title: b.title || "",
+            daysOfWeek: b.daysOfWeek.filter(function(d) { return _wdValid.indexOf(d) !== -1; }),
+            startTime: b.startTime, endTime: b.endTime, enabled: b.enabled !== false
+          };
+        });
+        s.residency.settings.dailyLifeSchedule = {
+          version: 1,
+          studyWindow: {
+            startTime: (_dlsSave.studyWindow && _dlsSave.studyWindow.startTime) || "06:30",
+            endTime: (_dlsSave.studyWindow && _dlsSave.studyWindow.endTime) || "23:00"
+          },
+          weeklyBlocks: _cleanBlocks
         };
       }
 
@@ -2310,14 +2859,20 @@
 
     // ═══ مرحله‌ی ساعت‌های مطالعه ═══
     _overlay.querySelectorAll("[data-r19-sh]").forEach(function (inp) {
+      var key = inp.getAttribute("data-r19-sh");
       inp.addEventListener("input", function () {
-        var key = inp.getAttribute("data-r19-sh");
+        if (inp.value === "" || inp.value === null) return;
         var v = parseFloat(inp.value);
-        if (isNaN(v)) v = 0;
+        if (isNaN(v)) return;
         if (v < 0) v = 0;
         if (v > 16) { v = 16; inp.value = 16; }
         if (!_draft.studyHours) _draft.studyHours = {};
         _draft.studyHours[key] = v;
+      });
+      inp.addEventListener("blur", function () {
+        if (inp.value === "" || inp.value === null) {
+          inp.value = (_draft.studyHours && _draft.studyHours[key] != null) ? _draft.studyHours[key] : 0;
+        }
       });
     });
 
@@ -2345,6 +2900,291 @@
     });
 
 
+    // [PATCH:dailylife-wire]
+    var _dlsStart = _overlay.querySelector("[data-dls-sw-start]");
+    if (_dlsStart) _dlsStart.addEventListener("input", function () {
+      if (_draft.dailyLifeSchedule) _draft.dailyLifeSchedule.studyWindow.startTime = _dlsStart.value.trim();
+    });
+    var _dlsEnd = _overlay.querySelector("[data-dls-sw-end]");
+    if (_dlsEnd) _dlsEnd.addEventListener("input", function () {
+      if (_draft.dailyLifeSchedule) _draft.dailyLifeSchedule.studyWindow.endTime = _dlsEnd.value.trim();
+    });
+    var _dlsAdd = _overlay.querySelector("[data-dls-add]");
+    if (_dlsAdd) _dlsAdd.addEventListener("click", function () {
+      if (!_draft.dailyLifeSchedule) return;
+      _draft.dailyLifeSchedule.weeklyBlocks.push({
+        id: "dls-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,6),
+        kind: "meal", title: "ناهار",
+        daysOfWeek: ["saturday","sunday","monday","tuesday","wednesday"],
+        startTime: "13:00", endTime: "13:45", enabled: true
+      });
+      _render();
+    });
+    _overlay.querySelectorAll("[data-dls-remove]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var idx = parseInt(b.getAttribute("data-dls-remove"), 10);
+        if (_draft.dailyLifeSchedule) {
+          _draft.dailyLifeSchedule.weeklyBlocks.splice(idx, 1);
+          _render();
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-kind]").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        var idx = parseInt(sel.getAttribute("data-dls-kind"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].kind = sel.value;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-title]").forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        var idx = parseInt(inp.getAttribute("data-dls-title"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].title = inp.value;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-start]").forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        var idx = parseInt(inp.getAttribute("data-dls-start"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].startTime = inp.value.trim();
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-end]").forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        var idx = parseInt(inp.getAttribute("data-dls-end"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].endTime = inp.value.trim();
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-enabled]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var idx = parseInt(cb.getAttribute("data-dls-enabled"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].enabled = cb.checked;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-wd]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var parts = b.getAttribute("data-dls-wd").split("|");
+        var idx = parseInt(parts[0], 10);
+        var wd = parts[1];
+        var blk = _draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx];
+        if (!blk) return;
+        var pos = blk.daysOfWeek.indexOf(wd);
+        if (pos >= 0) blk.daysOfWeek.splice(pos, 1);
+        else blk.daysOfWeek.push(wd);
+        _render();
+      });
+    });
+    // [PATCH:dailylife-wire-v2]
+    _overlay.querySelectorAll("[data-dls-sw-start]").forEach(function(inp) {
+      inp.addEventListener("change", function() {
+        if (_draft.dailyLifeSchedule) _draft.dailyLifeSchedule.studyWindow.startTime = inp.value;
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-sw-end]").forEach(function(inp) {
+      inp.addEventListener("change", function() {
+        if (_draft.dailyLifeSchedule) _draft.dailyLifeSchedule.studyWindow.endTime = inp.value;
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-preset]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        _addDlsPreset(btn.getAttribute("data-dls-preset"));
+        _render();
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-add]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        if (!_draft.dailyLifeSchedule) return;
+        _draft.dailyLifeSchedule.weeklyBlocks.push({
+          id: "dls-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,6),
+          kind: "other", title: "تعهد جدید",
+          daysOfWeek: ["saturday","sunday","monday","tuesday","wednesday","thursday","friday"],
+          startTime: "12:00", endTime: "12:30", enabled: true
+        });
+        _render();
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-remove]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var idx = parseInt(btn.getAttribute("data-dls-remove"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks.splice(idx, 1);
+          _render();
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-title]").forEach(function(inp) {
+      inp.addEventListener("input", function() {
+        var idx = parseInt(inp.getAttribute("data-dls-title"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].title = inp.value;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-start]").forEach(function(inp) {
+      inp.addEventListener("change", function() {
+        var idx = parseInt(inp.getAttribute("data-dls-start"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].startTime = inp.value;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-end]").forEach(function(inp) {
+      inp.addEventListener("change", function() {
+        var idx = parseInt(inp.getAttribute("data-dls-end"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].endTime = inp.value;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-enabled]").forEach(function(cb) {
+      cb.addEventListener("change", function() {
+        var idx = parseInt(cb.getAttribute("data-dls-enabled"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].enabled = cb.checked;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-rot]").forEach(function(sel) {
+      sel.addEventListener("change", function() {
+        var idx = parseInt(sel.getAttribute("data-dls-rot"), 10);
+        var blk = _draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx];
+        if (!blk) return;
+        blk.rotationId = sel.value;
+        if (sel.value && _draft.rotationDays && _draft.rotationDays[sel.value]) {
+          var sched = _draft.rotationDays[sel.value];
+          blk.daysOfWeek = Object.keys(sched).filter(function(k) { return sched[k] === "active"; });
+        }
+        _render();
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-wd]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var parts = btn.getAttribute("data-dls-wd").split("|");
+        var idx = parseInt(parts[0], 10);
+        var wk = parts[1];
+        var blk = _draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx];
+        if (!blk) return;
+        var pos = blk.daysOfWeek.indexOf(wk);
+        if (pos >= 0) blk.daysOfWeek.splice(pos, 1);
+        else blk.daysOfWeek.push(wk);
+        _render();
+      });
+    });
+    // [PATCH:dailylife-wire-v3]
+    function _readTp(attr, idx) {
+      var hEl = _overlay.querySelector('[data-dls-tp-h="' + attr + '|' + idx + '"]');
+      var mEl = _overlay.querySelector('[data-dls-tp-m="' + attr + '|' + idx + '"]');
+      if (!hEl || !mEl) return null;
+      return hEl.value + ":" + mEl.value;
+    }
+    _overlay.querySelectorAll("[data-dls-tp-h], [data-dls-tp-m]").forEach(function(sel) {
+      sel.addEventListener("change", function() {
+        var keyAttr = sel.getAttribute("data-dls-tp-h") || sel.getAttribute("data-dls-tp-m");
+        if (!keyAttr) return;
+        var parts = keyAttr.split("|");
+        var attr = parts[0];
+        var idx = parseInt(parts[1], 10);
+        var newVal = _readTp(attr, idx);
+        if (!newVal) return;
+        var dls = _draft.dailyLifeSchedule;
+        if (!dls) return;
+        if (attr === "sw-start") dls.studyWindow.startTime = newVal;
+        else if (attr === "sw-end") dls.studyWindow.endTime = newVal;
+        else if (attr === "block-start" && dls.weeklyBlocks[idx]) dls.weeklyBlocks[idx].startTime = newVal;
+        else if (attr === "block-end" && dls.weeklyBlocks[idx]) dls.weeklyBlocks[idx].endTime = newVal;
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-preset]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        try {
+          _addDlsPreset(btn.getAttribute("data-dls-preset"));
+          _render();
+        } catch (e) { console.error("[dls preset]", e); }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-add]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        if (!_draft.dailyLifeSchedule) return;
+        _draft.dailyLifeSchedule.weeklyBlocks.push({
+          id: "dls-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,6),
+          kind: "other", title: "تعهد جدید",
+          daysOfWeek: ["saturday","sunday","monday","tuesday","wednesday","thursday","friday"],
+          startTime: "12:00", endTime: "12:30", enabled: true
+        });
+        _render();
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-remove]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var idx = parseInt(btn.getAttribute("data-dls-remove"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks.splice(idx, 1);
+          _render();
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-title]").forEach(function(inp) {
+      inp.addEventListener("input", function() {
+        var idx = parseInt(inp.getAttribute("data-dls-title"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].title = inp.value;
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-enabled]").forEach(function(cb) {
+      cb.addEventListener("change", function() {
+        var idx = parseInt(cb.getAttribute("data-dls-enabled"), 10);
+        if (_draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx]) {
+          _draft.dailyLifeSchedule.weeklyBlocks[idx].enabled = cb.checked;
+          _render();
+        }
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-rot]").forEach(function(sel) {
+      sel.addEventListener("change", function() {
+        var idx = parseInt(sel.getAttribute("data-dls-rot"), 10);
+        var blk = _draft.dailyLifeSchedule && _draft.dailyLifeSchedule.weeklyBlocks[idx];
+        if (!blk) return;
+        blk.rotationId = sel.value;
+        if (sel.value && _draft.rotationDays && _draft.rotationDays[sel.value]) {
+          var sched = _draft.rotationDays[sel.value];
+          var activeDays = [];
+          Object.keys(sched).forEach(function(k) {
+            if (sched[k] === "active") activeDays.push(k);
+          });
+          if (activeDays.length > 0) blk.daysOfWeek = activeDays;
+        }
+        _render();
+      });
+    });
+    _overlay.querySelectorAll("[data-dls-wd]").forEach(function(btn) {
+      btn.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var raw = btn.getAttribute("data-dls-wd");
+        if (!raw) return;
+        var parts = raw.split("|");
+        var idx = parseInt(parts[0], 10);
+        var wk = parts[1];
+        var dls = _draft.dailyLifeSchedule;
+        if (!dls || !Array.isArray(dls.weeklyBlocks)) return;
+        var blk = dls.weeklyBlocks[idx];
+        if (!blk) return;
+        if (!Array.isArray(blk.daysOfWeek)) blk.daysOfWeek = [];
+        var pos = blk.daysOfWeek.indexOf(wk);
+        if (pos >= 0) blk.daysOfWeek.splice(pos, 1);
+        else blk.daysOfWeek.push(wk);
+        _render();
+      });
+    });
   }
 
   /* ─── Baseline editor (Phase 6) ─── */
@@ -2712,5 +3552,409 @@
     return { step: done, total: 5, percent: Math.round(done / 5 * 100) };
   };
 
-  console.log("[residency.setup.wizard.v19] loaded v19.1 (enhanced)");
+  
+  // [PATCH:r2i-c1-close-capture] unify header close button with _requestClose
+  if (!window.__wizCloseCaptureInstalled) {
+    window.__wizCloseCaptureInstalled = true;
+    document.addEventListener("click", function (e) {
+      if (!_overlay) return;
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var btn = t.closest(".r19-close");
+      if (!btn) return;
+      if (!_overlay.contains(btn)) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      _requestClose("header");
+    }, true);
+  }
+  
+  // ═══════════════════════════════════════════════════════════
+  // [R2I-INT] Integrated Wizard Redesign (C2-C5)
+  // ═══════════════════════════════════════════════════════════
+  window.__wizR2IApplied = true;
+
+  var _GROUPS = [
+    { num: 1, title: "\u0634\u0631\u0648\u0639",          from: "welcome",         to: "plan" },
+    { num: 2, title: "\u0645\u062D\u062A\u0648\u0627",          from: "subjects",        to: "books" },
+    { num: 3, title: "\u0632\u0645\u0627\u0646\u200C\u0628\u0646\u062F\u06CC",     from: "rounds",          to: "enrollments" },
+    { num: 4, title: "\u062A\u0646\u0637\u06CC\u0645\u0627\u062A",        from: "readingStrategy", to: "dailyLife" },
+    { num: 5, title: "\u0628\u0631\u0631\u0633\u06CC",           from: "preview",         to: "summary" }
+  ];
+
+  function _stepIdOf() { return (STEPS[_step] && STEPS[_step].id) || ""; }
+
+  function _currentGroup() {
+    for (var g = 0; g < _GROUPS.length; g++) {
+      var grp = _GROUPS[g];
+      var fromIdx = -1, toIdx = -1;
+      for (var j = 0; j < STEPS.length; j++) {
+        if (STEPS[j].id === grp.from) fromIdx = j;
+        if (STEPS[j].id === grp.to)   toIdx = j;
+      }
+      if (fromIdx < 0 || toIdx < 0) continue;
+      if (_step >= fromIdx && _step <= toIdx) {
+        return {
+          num: grp.num, title: grp.title,
+          label: "\u06AF\u0631\u0648\u0647 " + _fa(grp.num) + " \u0627\u0632 " + _fa(_GROUPS.length) + ": " + grp.title
+        };
+      }
+    }
+    return null;
+  }
+
+  function _ensureStepLiveRegion() {
+    if (!_overlay) return null;
+    var el = _overlay.querySelector("[data-r2i-step-live]");
+    if (el) { _stepLiveRegion = el; return el; }
+    el = document.createElement("div");
+    el.className = "r19-sr-only";
+    el.setAttribute("aria-live", "polite");
+    el.setAttribute("aria-atomic", "true");
+    el.setAttribute("role", "status");
+    el.setAttribute("data-r2i-step-live", "1");
+    _overlay.appendChild(el);
+    _stepLiveRegion = el;
+    return el;
+  }
+
+  function _announceStep() {
+    var el = _ensureStepLiveRegion();
+    if (!el) return;
+    var info = STEPS[_step];
+    if (!info) return;
+    var grp = _currentGroup();
+    var txt = "\u0645\u0631\u062D\u0644\u0647 " + _fa(_step + 1) + " \u0627\u0632 " + _fa(STEPS.length) + ": " + info.title;
+    if (grp) txt += " \u00B7 " + grp.label;
+    el.textContent = "";
+    setTimeout(function () { if (el.parentNode) el.textContent = txt; }, 40);
+  }
+
+  function _focusStepEntry() {
+    if (!_overlay) return;
+    var sid = _stepIdOf();
+    var target;
+    if (sid === "welcome" || sid === "summary") {
+      target = _overlay.querySelector(".r19-btn-primary, [data-r19-wz-next]");
+    } else {
+      target = _overlay.querySelector("input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])");
+      if (!target) target = _overlay.querySelector(".r19-btn-primary");
+    }
+    if (target && target.focus) { try { target.focus({ preventScroll: true }); } catch (e) {} }
+  }
+
+  function _focusFirstInvalid() {
+    if (!_overlay) return false;
+    var el = _overlay.querySelector("[aria-invalid='true']");
+    if (el && el.focus) { try { el.focus({ preventScroll: true }); } catch (e) {} return true; }
+    return false;
+  }
+
+  function _applyInlineErrors() {
+    if (!_overlay) return false;
+
+    _overlay.querySelectorAll("[aria-invalid='true']").forEach(function (x) {
+      x.removeAttribute("aria-invalid");
+    });
+    _overlay.querySelectorAll("[aria-describedby]").forEach(function (x) {
+      var v = x.getAttribute("aria-describedby");
+      if (v && (v.indexOf("wiz-err-") === 0 || v === "wiz-error-box")) {
+        x.removeAttribute("aria-describedby");
+      }
+    });
+    _overlay.querySelectorAll(".r19-field-err").forEach(function (x) {
+      x.hidden = true;
+      x.textContent = "";
+    });
+
+    if (!_error) return false;
+
+    var marked = 0;
+    var firstMarked = null;
+
+    function _markOnly(el, errId) {
+      if (!el) return;
+      el.setAttribute("aria-invalid", "true");
+      if (errId) el.setAttribute("aria-describedby", errId);
+      marked++;
+      if (!firstMarked) firstMarked = el;
+    }
+    function _markFull(el, errId, msg) {
+      if (!el) return;
+      el.setAttribute("aria-invalid", "true");
+      if (errId) {
+        el.setAttribute("aria-describedby", errId);
+        var er = _overlay.querySelector("#" + errId);
+        if (er) { er.textContent = msg; er.hidden = false; }
+      }
+      marked++;
+      if (!firstMarked) firstMarked = el;
+    }
+
+    var sid = _stepIdOf();
+
+    if (sid === "plan") {
+      var goalEl = _overlay.querySelector("[data-r19-plan-goal]");
+      var titleEl = _overlay.querySelector("[data-r19-plan-title]");
+      if (_error.indexOf("\u0647\u062F\u0641") >= 0 && goalEl) {
+        _markFull(goalEl, "wiz-err-plan-goal", _error);
+      } else if (_error.indexOf("\u0639\u0646\u0648\u0627\u0646") >= 0 && titleEl) {
+        _markFull(titleEl, "wiz-err-plan-title", _error);
+      }
+    } else {
+      var cleaned = _error.replace(/[\u060C\u061B\u061F\.:!?]/g, " ");
+      var keywords = cleaned.split(/\s+/).filter(function (w) { return w && w.length >= 2; });
+      if (keywords.length > 0) {
+        var fields = _overlay.querySelectorAll(
+          "input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])"
+        );
+        for (var i = 0; i < fields.length; i++) {
+          var f = fields[i];
+          var hay = "";
+          var lbl = f.closest ? f.closest("label") : null;
+          if (lbl) hay += " " + (lbl.textContent || "");
+          var par = f.parentNode;
+          if (par && par.querySelectorAll) {
+            var sibs = par.querySelectorAll("label, .r19-goal-label, .r19-form-label");
+            for (var s = 0; s < sibs.length; s++) hay += " " + (sibs[s].textContent || "");
+          }
+          hay += " " + (f.getAttribute("placeholder") || "");
+          hay += " " + (f.getAttribute("name") || "");
+          hay += " " + (f.id || "");
+          hay += " " + (f.getAttribute("aria-label") || "");
+          var matched = false;
+          for (var k = 0; k < keywords.length; k++) {
+            if (hay.indexOf(keywords[k]) >= 0) { matched = true; break; }
+          }
+          if (matched) _markOnly(f, "wiz-error-box");
+        }
+      }
+    }
+
+    if (firstMarked && firstMarked.focus) {
+      try { firstMarked.focus({ preventScroll: false }); } catch (e) {}
+    }
+    return marked > 0;
+  }
+
+  // Wrap _renderHeader: fix step count + inject group label
+  var _origRenderHeaderR2I = _renderHeader;
+  _renderHeader = function () {
+    var html = _origRenderHeaderR2I();
+    try {
+      var grp = _currentGroup();
+      var grpSuffix = grp ? " \u00B7 " + grp.label : "";
+      html = html.replace(
+        /<div class="r19-sub">[^<]*<\/div>/,
+        '<div class="r19-sub">\u0645\u0631\u062D\u0644\u0647 ' + _fa(_step + 1) + ' \u0627\u0632 ' + _fa(STEPS.length) + grpSuffix + '</div>'
+      );
+    } catch (e) { console.warn("[wiz header r2i]", e); }
+    return html;
+  };
+
+  // Wrap _render: post-render focus + live + inline errors
+  var _origRenderR2I = _render;
+  _render = function () {
+    _origRenderR2I();
+    try {
+      var marked = _applyInlineErrors();
+      if (!marked) {
+        if (_error) _focusFirstInvalid();
+        else _focusStepEntry();
+      }
+      _announceStep();
+    } catch (e) { console.warn("[wiz r2i postRender]", e); }
+  };
+
+  // Wrap _commit: double-submit + existing plan confirmation
+  var _origCommitR2I = _commit;
+  _commit = function () {
+    if (_committing) { console.log("[wiz] commit blocked (already in progress)"); return; }
+    var s = _state();
+    var activeId = s && s.residency && s.residency.meta && s.residency.meta.activePlanId;
+    if (activeId && !_confirmedExistingPlan) {
+      _committing = true;
+      var plan = (s.residency.plans || []).find(function (p) { return p && p.id === activeId; });
+      var planTitle = plan ? (plan.title || activeId) : activeId;
+      var msg = "\u06CC\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0641\u0639\u0627\u0644 \u062F\u0627\u0631\u06CC: \u00AB" + planTitle + "\u00BB.\n\n" +
+                "\u0627\u06AF\u0631 \u0627\u062F\u0627\u0645\u0647 \u0628\u062F\u0647\u06CC\u060C \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u062C\u062F\u06CC\u062F \u0633\u0627\u062E\u062A\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F. \u0627\u062F\u0627\u0645\u0647 \u0645\u06CC\u200C\u062F\u0647\u06CC\u061F";
+      var onOk = function () {
+        _confirmedExistingPlan = true;
+        _committing = false;
+        try { _commit(); }
+        finally { _confirmedExistingPlan = false; }
+      };
+      var onCancel = function () { _committing = false; };
+      var R = window.InternshipResidency;
+      if (R && R.dialog && typeof R.dialog.confirm === "function") {
+        var p = R.dialog.confirm(msg, {
+          title: "\u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0641\u0639\u0627\u0644 \u0645\u0648\u062C\u0648\u062F",
+          confirmText: "\u0628\u0633\u0627\u0632 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u062C\u062F\u06CC\u062F",
+          cancelText: "\u0627\u0646\u0635\u0631\u0627\u0641",
+          danger: false
+        });
+        if (p && typeof p.then === "function") {
+          p.then(function (ok) { if (ok) onOk(); else onCancel(); })
+           .catch(function () { onCancel(); });
+          return;
+        }
+      }
+      if (window.confirm(msg)) onOk(); else onCancel();
+      return;
+    }
+    _committing = true;
+    try { _origCommitR2I(); }
+    finally { _committing = false; }
+  };
+
+    /* ─── R2-I Finalization — Guard Tests (F-02) ─── */
+  WZ.__tests = WZ.__tests || {};
+  WZ.__tests.guardScenarios = function () {
+    return new Promise(function (resolve) {
+      var results = [];
+      function rec(name, pass, detail) {
+        results.push({ name: name, pass: !!pass, detail: detail || "" });
+      }
+      var origGetState = window.__os && window.__os.getState;
+      var origSaveState = window.__os && window.__os.saveState;
+      var origAddPlan = R.store.addPlan;
+      var origSetActive = R.store.setActivePlan;
+      var origConfirm = (R.dialog && R.dialog.confirm) || null;
+      var origInner = _origCommitR2I;
+
+      function mockFixture(activePlanId) {
+        return {
+          tasks: [], shifts: [], rotations: [], cases: [], procedures: [],
+          residency: {
+            plans: activePlanId ? [{ id: activePlanId, title: "test-old", examDate: null }] : [],
+            subjects: [], books: [], rounds: [], enrollments: [], activities: [],
+            assessments: [], planVersions: [], reviewStates: [],
+            capacityProfiles: [], dayOverrides: [], manualOverrides: [],
+            constraints: [], reserveState: null,
+            settings: {}, meta: { activePlanId: activePlanId || null }
+          },
+          workspace: {}, replanTriggers: [], schedulingAcks: []
+        };
+      }
+
+      function restore() {
+        if (origGetState) window.__os.getState = origGetState;
+        if (origSaveState) window.__os.saveState = origSaveState;
+        R.store.addPlan = origAddPlan;
+        R.store.setActivePlan = origSetActive;
+        if (R.dialog) R.dialog.confirm = origConfirm;
+        _origCommitR2I = origInner;
+        _committing = false;
+      }
+
+      function S1() {
+        return new Promise(function (res) {
+          var fx = mockFixture("plan-old");
+          window.__os.getState = function () { return fx; };
+          window.__os.saveState = function () {};
+          R.dialog = R.dialog || {};
+          R.dialog.confirm = function () { return Promise.resolve(false); };
+          var innerCalls = 0;
+          _origCommitR2I = function () { innerCalls++; };
+          _committing = false;
+          try { _commit(); } catch (e) {}
+          setTimeout(function () {
+            var pass = (innerCalls === 0) && (fx.residency.meta.activePlanId === "plan-old") && (_committing === false);
+            rec("S1_activePlan_cancel", pass, "inner=" + innerCalls + " activeId=" + fx.residency.meta.activePlanId + " committing=" + _committing);
+            res();
+          }, 50);
+        });
+      }
+
+      function S2() {
+        return new Promise(function (res) {
+          var fx = mockFixture("plan-old");
+          window.__os.getState = function () { return fx; };
+          window.__os.saveState = function () {};
+          R.dialog = R.dialog || {};
+          R.dialog.confirm = function () { return Promise.resolve(true); };
+          var innerCalls = 0;
+          var addPlanCalls = 0;
+          R.store.addPlan = function (data) {
+            addPlanCalls++;
+            var np = { id: "test-new-id", title: (data && data.title) || "new", examDate: (data && data.examDate) || null };
+            fx.residency.plans.push(np);
+            return np;
+          };
+          R.store.setActivePlan = function (id) { fx.residency.meta.activePlanId = id; };
+          _origCommitR2I = function () {
+            innerCalls++;
+            var p = R.store.addPlan({ title: "new", examDate: null, status: "active" });
+            R.store.setActivePlan(p.id);
+          };
+          _committing = false;
+          try { _commit(); } catch (e) {}
+          setTimeout(function () {
+            var pass = (innerCalls === 1) && (addPlanCalls === 1) && (fx.residency.meta.activePlanId === "test-new-id") && (fx.residency.plans.length === 2);
+            rec("S2_activePlan_confirm", pass, "inner=" + innerCalls + " addPlan=" + addPlanCalls + " activeId=" + fx.residency.meta.activePlanId + " planCount=" + fx.residency.plans.length);
+            res();
+          }, 80);
+        });
+      }
+
+      function S3() {
+        return new Promise(function (res) {
+          var fx = mockFixture(null);
+          window.__os.getState = function () { return fx; };
+          window.__os.saveState = function () {};
+          R.dialog = R.dialog || {};
+          var confirmCalls = 0;
+          R.dialog.confirm = function () { confirmCalls++; return Promise.resolve(false); };
+          var innerCalls = 0;
+          _origCommitR2I = function () { innerCalls++; };
+          _committing = false;
+          try { _commit(); } catch (e) {}
+          setTimeout(function () {
+            var pass = (confirmCalls === 0) && (innerCalls === 1);
+            rec("S3_noActivePlan_normalPath", pass, "confirm=" + confirmCalls + " inner=" + innerCalls);
+            res();
+          }, 50);
+        });
+      }
+
+      function S4() {
+        return new Promise(function (res) {
+          var fx = mockFixture("plan-old");
+          window.__os.getState = function () { return fx; };
+          window.__os.saveState = function () {};
+          R.dialog = R.dialog || {};
+          var pendingResolve = null;
+          R.dialog.confirm = function () {
+            return new Promise(function (resolve) { pendingResolve = resolve; });
+          };
+          var innerCalls = 0;
+          _origCommitR2I = function () { innerCalls++; };
+          _committing = false;
+          try { _commit(); } catch (e) {}
+          var committingAfterFirst = _committing;
+          try { _commit(); } catch (e) {}
+          var committingAfterSecond = _committing;
+          setTimeout(function () {
+            var innerBefore = innerCalls;
+            if (typeof pendingResolve === "function") pendingResolve(true);
+            setTimeout(function () {
+              var pass = (innerBefore === 0) && (committingAfterFirst === true) && (committingAfterSecond === true) && (innerCalls === 1);
+              rec("S4_doubleCommit_blocked", pass, "innerBefore=" + innerBefore + " innerAfter=" + innerCalls + " commit1=" + committingAfterFirst + " commit2=" + committingAfterSecond);
+              res();
+            }, 60);
+          }, 40);
+        });
+      }
+
+      S1().then(S2).then(S3).then(S4).then(function () {
+        restore();
+        resolve({ passed: results.filter(function (r) { return r.pass; }).length, total: results.length, results: results });
+      }).catch(function (e) {
+        restore();
+        results.push({ name: "ORCHESTRATOR", pass: false, detail: String(e) });
+        resolve({ passed: 0, total: results.length, results: results });
+      });
+    });
+  };
+console.log("[residency.setup.wizard.v19] loaded v19.1 (enhanced)");
 })();

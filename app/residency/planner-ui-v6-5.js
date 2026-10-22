@@ -15,6 +15,7 @@
   var _generating = false;
   var _applying = false;
   var _lastApplyResult = null;
+  var _genOptions = { maxDays: null, sessionMinutes: 90 };
 
   // ─── Helpers ───
   function _esc(s) {
@@ -333,12 +334,47 @@
   }
 
   function _renderGenerateFooter(disabled) {
-    return '<div class="p65-footer">' +
-      '<button class="p65-btn p65-btn-primary" type="button" data-p65-generate' +
-        (disabled ? " disabled" : "") + '>' +
-        '🚀 ساخت پیشنهاد برنامه' +
-      '</button>' +
-      '<button class="p65-btn p65-btn-ghost" type="button" data-p65-close>انصراف</button>' +
+    var _daysVal = (_genOptions.maxDays != null && _genOptions.maxDays > 0) ? _genOptions.maxDays : "";
+    var _sessionVal = _genOptions.sessionMinutes || 90;
+    // [PATCH:days-range] compute min/max from snapshot
+    var _snap = _overlay ? R.plannerSnapshot.build(_planId, "plan") : null;
+    var _calDays = (_snap && _snap.calendar) ? _snap.calendar.length : 90;
+    var _totalDemandMin = 0;
+    ((_snap && _snap.demands) || []).forEach(function (d) {
+      if (d && (d.status === "active" || d.status === "optional")) {
+        _totalDemandMin += (d.estimatedRemainingMinutes | 0);
+      }
+    });
+    var _avgCapMin = 0;
+    ((_snap && _snap.calendar) || []).forEach(function (c) {
+      _avgCapMin += (c.finalCapacityMinutes | 0);
+    });
+    _avgCapMin = _calDays > 0 ? Math.round(_avgCapMin / _calDays) : 240;
+    var _minDays = _avgCapMin > 0 ? Math.max(1, Math.ceil(_totalDemandMin / _avgCapMin)) : 1;
+    var _maxDays = Math.max(_minDays, _calDays);
+    var _sessionOpts = [30, 45, 60, 75, 90, 120].map(function (v) {
+      return '<option value="' + v + '"' + (v === _sessionVal ? ' selected' : '') + '>' + _fa(v) + ' دقیقه</option>';
+    }).join("");
+    return '<div class="p65-footer p65-footer-options">' +
+      '<div class="p65-opt-grid">' +
+        '<label class="p65-opt">' +
+          '<span class="p65-opt-lbl">📅 تعداد روز برای توزیع</span>' +
+          '<input type="number" data-p65-opt-days min="' + _minDays + '" max="' + _maxDays + '" placeholder="' + _maxDays + '" value="' + _daysVal + '">' +
+          '<span class="p65-opt-hint">' + _fa(_minDays) + ' تا ' + _fa(_maxDays) + ' روز (خالی = ' + _fa(_maxDays) + ')</span>' +
+        '</label>' +
+        '<label class="p65-opt">' +
+          '<span class="p65-opt-lbl">⏱️ مدت هر جلسه</span>' +
+          '<select data-p65-opt-session>' + _sessionOpts + '</select>' +
+          '<span class="p65-opt-hint">برای محاسبه‌ی تعداد صفحات هر سشن</span>' +
+        '</label>' +
+      '</div>' +
+      '<div class="p65-opt-actions">' +
+        '<button class="p65-btn p65-btn-primary" type="button" data-p65-generate' +
+          (disabled ? " disabled" : "") + '>' +
+          '🚀 ساخت پیشنهاد برنامه' +
+        '</button>' +
+        '<button class="p65-btn p65-btn-ghost" type="button" data-p65-close>انصراف</button>' +
+      '</div>' +
     '</div>';
   }
 
@@ -528,6 +564,18 @@
         '</div>';
       }).join("");
 
+      var _applied = (R.plannerApply && R.plannerApply.checkAppliedForDay)
+        ? R.plannerApply.checkAppliedForDay(proposal, date) : [];
+      var _allAdded = _applied.length > 0 && _applied.every(function(x){ return x.alreadyAdded; });
+      var _isEdited = !!(_editedDays && _editedDays[date]);
+      var _actionsHTML;
+      if (_allAdded) {
+        _actionsHTML = '<span style="color:#34d399;font-weight:600;font-size:12px;">✓ قبلاً به تایم‌لاین اضافه شده</span>';
+      } else {
+        _actionsHTML = '<button class="p65-btn p65-btn-primary" type="button" data-p65-add-day="' + _esc(date) + '" style="font-size:12px;padding:5px 10px;">+ افزودن به تایم‌لاین</button>' +
+                       '<button class="p65-btn p65-btn-ghost" type="button" data-p65-edit-day="' + _esc(date) + '" style="font-size:12px;padding:5px 10px;">✏️ ویرایش' + (_isEdited ? ' *' : '') + '</button>';
+      }
+
       return '<details class="p65-day" open>' +
         '<summary class="p65-day-head">' +
           '<span class="p65-day-date">' + _fa(date) + '</span>' +
@@ -536,6 +584,7 @@
           '</span>' +
         '</summary>' +
         '<div class="p65-day-body">' + rows + '</div>' +
+        '<div class="p65-day-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;padding:0 8px 8px;">' + _actionsHTML + '</div>' +
       '</details>';
     }).join("");
 
@@ -584,8 +633,6 @@
     return '<div class="p65-footer p65-footer-proposal">' +
       reasonHTML +
       '<div class="p65-footer-actions">' +
-        '<button class="p65-btn p65-btn-primary" type="button" data-p65-apply' +
-          (applyDisabled ? " disabled" : "") + '>✅ اعمال برنامه</button>' +
         (aiAvailable ? '<button class="p65-btn p65-btn-ghost" type="button" data-p65-ai-review>🤖 بررسی با AI</button>' : '') +
         '<button class="p65-btn p65-btn-ghost" type="button" data-p65-regenerate>🔄 ساخت مجدد</button>' +
         '<button class="p65-btn p65-btn-ghost" type="button" data-p65-close>انصراف</button>' +
@@ -622,9 +669,39 @@
     if (!_overlay) return;
 
     _overlay.querySelectorAll("[data-p65-close]").forEach(function (b) {
-      b.addEventListener("click", UI.close);
+      b.addEventListener("click", function () {
+        if (_editedDays && Object.keys(_editedDays).length > 0) {
+          if (!window.confirm("ویرایش‌های دستی روی روزها از بین می‌روند. مطمئنی؟")) return;
+          _editedDays = {};
+        }
+        UI.close();
+      });
     });
 
+    _overlay.querySelectorAll("[data-p65-add-day]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        _onAddDay(b.getAttribute("data-p65-add-day"));
+      });
+    });
+
+    _overlay.querySelectorAll("[data-p65-edit-day]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        _onEditDay(b.getAttribute("data-p65-edit-day"));
+      });
+    });
+
+    _overlay.querySelectorAll("[data-p65-opt-days]").forEach(function (inp) {
+      inp.addEventListener("input", function () {
+        var v = parseInt(inp.value, 10);
+        _genOptions.maxDays = (isNaN(v) || v < 1) ? null : v;
+      });
+    });
+    _overlay.querySelectorAll("[data-p65-opt-session]").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        var v = parseInt(sel.value, 10);
+        if (!isNaN(v) && v > 0) _genOptions.sessionMinutes = v;
+      });
+    });
     _overlay.querySelectorAll("[data-p65-generate]").forEach(function (b) {
       b.addEventListener("click", _onGenerate);
     });
@@ -633,9 +710,6 @@
       b.addEventListener("click", _onGenerate);
     });
 
-    _overlay.querySelectorAll("[data-p65-apply]").forEach(function (b) {
-      b.addEventListener("click", _onApply);
-    });
 
     // ─── [PATCH:ai-advisor-v8] Wire AI review button ───
     _overlay.querySelectorAll("[data-p65-ai-review]").forEach(function (b) {
@@ -694,6 +768,10 @@
   // ─── Generate ───
   function _onGenerate() {
     if (_generating) return;
+    if (_editedDays && Object.keys(_editedDays).length > 0) {
+      if (!window.confirm("ویرایش‌های دستی روی روزها از بین می‌روند. مطمئنی؟")) return;
+      _editedDays = {};
+    }
     _generating = true;
     _proposal = null;
     _render();
@@ -702,7 +780,10 @@
     setTimeout(function () {
       var res;
       try {
-        res = R.plannerOrchestrator.generateProposal(_planId, { scope: "plan" });
+        var _genOpts = { scope: "plan" };
+        if (_genOptions.maxDays != null && _genOptions.maxDays > 0) _genOpts.maxDays = _genOptions.maxDays;
+        if (_genOptions.sessionMinutes != null && _genOptions.sessionMinutes > 0) _genOpts.sessionMinutes = _genOptions.sessionMinutes;
+        res = R.plannerOrchestrator.generateProposal(_planId, _genOpts);
       } catch (err) {
         console.warn("[planner.ui] generate threw:", err);
         res = { ok: false, error: String(err && err.message || err) };
@@ -773,6 +854,104 @@
         _showErrorBelow("اعمال برنامه ناموفق بود: " + _esc((res && (res.reason || (res.errors && res.errors[0]))) || "خطای نامشخص"));
       }
     }, 30);
+  }
+
+  // ─── Per-day add (Phase 2) ───
+  var _editedDays = _editedDays || {};
+
+  function _onAddDay(date) {
+    if (!_proposal || !date) return;
+    if (_applying) return;
+    _applying = true;
+    var res;
+    try {
+      res = R.plannerApply.applyProposalSubset(_proposal, { date: date, force: true });
+    } catch (err) {
+      res = { success: false, reason: String(err && err.message || err) };
+    }
+    _applying = false;
+    if (res && res.success) {
+      if (res.alreadyExists) {
+        _showSimpleAlert("این روز قبلاً به تایم‌لاین اضافه شده.");
+      } else {
+        var n = (res.statistics && res.statistics.activitiesCreated) || 0;
+        var t = (res.statistics && res.statistics.tasksCreated) || 0;
+        _showSimpleAlert("✓ " + _fa(n) + " فعالیت و " + _fa(t) + " تسک به تایم‌لاین اضافه شد.");
+      }
+      delete _editedDays[date];
+      _render();
+    } else {
+      _showSimpleAlert("خطا: " + ((res && (res.reason || (res.errors && res.errors[0]))) || "نامشخص"));
+    }
+  }
+
+  function _onEditDay(date) {
+    if (!_proposal || !date) return;
+    var dayActs = (_proposal.proposedActivities || []).filter(function (a) {
+      return a && a.plannedDate === date;
+    });
+    if (dayActs.length === 0) return;
+
+    var pop = document.createElement("div");
+    pop.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:999998;";
+
+    var rowsHTML = dayActs.map(function (a, idx) {
+      return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">' +
+        '<span style="flex:1;font-size:13px;color:var(--text);">' + _esc(a.bookId || "") + ' · ص ' + _fa(a.plannedPageStart) + '–' + _fa(a.plannedPageEnd) + '</span>' +
+        '<label style="font-size:12px;color:var(--text-muted);">صفحات:</label>' +
+        '<input type="number" min="1" value="' + (a.plannedPages | 0) + '" data-p65-edit-idx="' + idx + '" style="width:80px;padding:4px 6px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);">' +
+      '</div>';
+    }).join("");
+
+    pop.innerHTML =
+      '<div style="background:var(--surface-1);border:1px solid var(--border);border-radius:14px;padding:18px;min-width:360px;max-width:520px;direction:rtl;">' +
+        '<h3 style="margin:0 0 12px;font-size:16px;">✏️ ویرایش ' + _fa(date) + '</h3>' +
+        '<p style="margin:0 0 12px;font-size:12px;color:var(--text-muted);">ویرایش فقط روی همین روز اثر دارد. اگر تغییر باعث gap/overlap شود، هشدار می‌گیری.</p>' +
+        '<div>' + rowsHTML + '</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">' +
+          '<button class="p65-btn p65-btn-primary" type="button" data-p65-edit-save>ذخیره</button>' +
+          '<button class="p65-btn p65-btn-ghost" type="button" data-p65-edit-cancel>انصراف</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(pop);
+
+    pop.querySelector("[data-p65-edit-cancel]").addEventListener("click", function () { pop.remove(); });
+    pop.addEventListener("click", function (e) { if (e.target === pop) pop.remove(); });
+
+    pop.querySelector("[data-p65-edit-save]").addEventListener("click", function () {
+      var inputs = pop.querySelectorAll("[data-p65-edit-idx]");
+      var warns = [];
+      var origSnapshot = dayActs.map(function (a) {
+        return { plannedPages: a.plannedPages, plannedDurationMinutes: a.plannedDurationMinutes };
+      });
+      inputs.forEach(function (inp) {
+        var i = parseInt(inp.getAttribute("data-p65-edit-idx"), 10);
+        var v = parseInt(inp.value, 10);
+        if (isNaN(v) || v < 1) { warns.push("عدد نامعتبر در ردیف " + (i + 1)); return; }
+        var a = dayActs[i];
+        if (!a) return;
+        a.plannedPages = v;
+        a.plannedPageEnd = a.plannedPageStart + v - 1;
+        var orig = origSnapshot[i];
+        if (orig && orig.plannedPages > 0 && orig.plannedDurationMinutes != null) {
+          var ratio = v / orig.plannedPages;
+          a.plannedDurationMinutes = Math.max(1, Math.round(orig.plannedDurationMinutes * ratio));
+        }
+      });
+      var sorted = dayActs.slice().sort(function (x, y) { return (x.plannedPageStart || 0) - (y.plannedPageStart || 0); });
+      for (var i = 1; i < sorted.length; i++) {
+        if ((sorted[i - 1].plannedPageEnd + 1) !== sorted[i].plannedPageStart) {
+          warns.push("گپ/هم‌پوشانی بین بلوک " + i + " و " + (i + 1));
+        }
+      }
+      _editedDays[date] = true;
+      pop.remove();
+      _render();
+      if (warns.length > 0) {
+        _showSimpleAlert("توجه: " + warns.join(" · "));
+      }
+    });
   }
 
   // ─── Apply Success ───

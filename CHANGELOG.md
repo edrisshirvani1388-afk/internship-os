@@ -7,10 +7,92 @@ This project adheres to a lightweight versioning scheme:
 - `v0.2.x` — Health / Nutrition / Food.db / Workout
 - `v0.3.x` — Sleep Hub
 - `v0.4.0` — Projects, Finance, Life, Dashboard UX, Greeting Cockpit
-- `v0.5.0+` — TBD
+- `v0.5.0` — Installer-based auto-update
+- `v0.5.1` — Update progress bar
+- `v0.5.2` — Update modal refinement
+- `v0.6.0` — Replan R3 + R2-H polish + R2-I wizard + Workspace 4-section
 
 Schema version is independent of app version.
 Schema stays at **v22** unless an explicit migration ADR is approved.
+
+---
+
+## [0.6.0] — 2026-10-22
+
+### Added
+- **Workspace Product Redesign — 4 sections** (`workspace-r2w-sections-v18.js`)
+  - نمای کلی (Overview) — action-oriented with deep-link to Review/Plan
+  - برنامه (Plan) — all activity views + filters preserved
+  - بازبینی و تغییر (Review & Change) — Proposal + Reviews + Version History in one flow
+  - تحلیل و راهنما (Analysis) — AI Advisor + Analytics + Context Inspector
+  - Persian labels, RTL, focus-visible, prefers-reduced-motion
+  - 7 unit tests
+
+- **R3 Replan Engine** (already in source; first documented release)
+  - Demand double-count fix (`planner-demand-v6.js`)
+  - `capacity_rebuild` mode (`planner-replan-v7.js`, ADR-074)
+  - Per-day proposal UI (ADR-075)
+  - Apply All vs Apply Selected semantics (ADR-076)
+  - Narrow hard-delete of future planned activities (ADR-081)
+  - 11 bugs fixed (calendar gap, sequential, proportional, orphan sweep, ...)
+
+- **R2-I Integrated Wizard Redesign**
+  - 5 step groups, 13-step header, `aria-live`, inline errors
+  - ESC/close unified via `R.dialog.confirm`
+  - Double-submit guard, focus management
+  - 12/12 automated PASS
+
+### Changed
+- **R2-H Visual Polish & Accessibility**
+  - Today CTA branch, program tools grid, manage-input alignment, V7 planner entry
+  - Future Days Preview (7-day slideshow)
+  - `:focus-visible`, `aria-label`, `aria-current`, `aria-live`, `prefers-reduced-motion`
+  - 2 automated tests waived (WebView2 harness artifact; manual keyboard verified)
+
+- `PROP_LABELS` — `superseded` mapped to «جایگزین‌شده» (ISSUE-121 resolved)
+
+### Fixed
+- Replan: calendar gap to examDate, sequential allocation, proportional allocation
+- Replan: orphan task sweep, cancelled projection filter, reserve accounting
+- Wizard entry bug (W-45)
+- 11 cancelled tasks in calendar (ISSUE-104)
+
+### Tests
+- **578/578 verified PASS** (production 475 + workspace 14 + V7 132, no duplicates)
+- V7.input 44/44 and V7.ui 45/45 with ADR-087 isolated fixture
+- State Integrity: SHA256 unchanged, reference identity preserved
+- Protected Contracts: all intact (roundScheduler, PRA, CF, SP, Schema v22)
+
+### Known Limitations
+- **Review due-row rendering** — NOT TESTED (no due reviews in current data; empty-state verified)
+- **W-43 overload display** — CLOSED WITH DOCUMENTED LIMITATION (7/7 fixture PASS; real overload not reproducible)
+- **ISSUE-76** — `plannerAllocation` returns legacy array (6/6 legacy count)
+- **Legacy cleanup** — `workspace-v13.js` + `.pw13-*` deferred
+
+---
+
+## [0.5.2] — 2026-10-16
+
+### Changed
+- Update download progress (percentage + MB + phase)
+
+---
+
+## [0.5.1] — 2026-10-16
+
+### Added
+- Installer-based auto-update (ADR-059)
+- `release.ps1`, `release.cmd`, `release.iss`
+- `/api/check-update`, `/api/apply-update` endpoints
+- SHA256 verification, silent install, `data/` preservation
+
+---
+
+## [0.5.0] — 2026-10-16
+
+### Added
+- GitHub release infrastructure
+- `VERSION`, `version.json`, `update.json` manifest
 
 ---
 

@@ -101,6 +101,8 @@
 
   SP.projectTask = function (task) {
     if (!task || !task.id) return null;
+    /* [PATCH:f4a-cancelled] cancelled tasks hidden from projection (audit preserved) */
+    if (task.cancelled === true) return null;
     if (!_isValidDate(task.date)) return null;
 
     var startTime = _normTime(task.time);
@@ -672,6 +674,57 @@
       })();
     })();
 
+    /* [PATCH:f4a-tests] F4-A projection cancellation tests */
+    (function () {
+      function _mk(tasks) { return { tasks: tasks || [], shifts: [], rotations: [], residency: { activities: [] }, cases: [] }; }
+      function _tk(id, date, opts) {
+        opts = opts || {};
+        var x = { id: id, title: opts.title || id, areaId: "study", date: date, time: opts.time || "08:00", durationMinutes: opts.dur || 60, completed: false };
+        if (opts.cancelled) x.cancelled = true;
+        if (opts.recurrence) x.recurrence = opts.recurrence;
+        return x;
+      }
+      var D = "1405/8/20";
+      var D2 = "1405/8/21";
+
+      (function () {
+        var st = _mk([_tk("c1", D, { cancelled: true })]);
+        var all = SP.projectAll(st);
+        var found = all.items.filter(function(x){ return x.sourceId === "c1"; });
+        t("F4A-1: cancelled task excluded from projection", found.length === 0);
+      })();
+
+      (function () {
+        var st = _mk([_tk("a1", D, {})]);
+        var all = SP.projectAll(st);
+        var found = all.items.filter(function(x){ return x.sourceId === "a1"; });
+        t("F4A-2: active task still projected", found.length === 1);
+      })();
+
+      (function () {
+        var st = _mk([_tk("c3", D, { cancelled: true })]);
+        var before = st.tasks.length;
+        SP.projectAll(st);
+        t("F4A-3: state preserved after projection", st.tasks.length === before && st.tasks[0].cancelled === true);
+      })();
+
+      (function () {
+        var st = _mk([
+          _tk("old", D, { cancelled: true, title: "old" }),
+          _tk("new", D, { title: "new" })
+        ]);
+        var all = SP.projectAll(st);
+        var onDate = all.items.filter(function(x){ return x.date === D; });
+        t("F4A-4: cancelled+replacement -> only 1 visible", onDate.length === 1 && onDate[0].sourceId === "new");
+      })();
+
+      (function () {
+        var st = _mk([_tk("rec-c", D, { cancelled: true, recurrence: "daily" })]);
+        var all = SP.projectAll(st, { rangeStart: D, rangeEnd: D2 });
+        var found = all.items.filter(function(x){ return x.sourceId === "rec-c"; });
+        t("F4A-5: cancelled recurring parent -> 0 instances", found.length === 0);
+      })();
+    })();
     var passed = results.filter(function (r) { return r.pass; }).length;
     var total = results.length;
     console.log("\n══════════════════════════════════════");

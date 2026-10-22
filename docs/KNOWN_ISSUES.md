@@ -520,3 +520,339 @@ Next: Consider in a future UX pass.
 - ISSUE-50 — AI content modal focus handling in WebView2 (best-effort clipboard).
 - ISSUE-51 — `_aiPromptForArea` includes up to 30 existing titles; long
   prompt may exceed some AI context limits if content is dense. Accept.
+
+
+## V7 Study Planner — Known Limitations (2026-10-18)
+
+### ISSUE-52 — Baseline not active
+Status: Open (Milestone 3)
+Severity: Medium
+Context: initialStudyBaseline null in all enrollments.
+Next: Milestone 3.
+
+### ISSUE-53 — V7 UI edit uses hardcoded 15 pph
+Status: Open
+Severity: Low
+Next: store pagesPerHour in block, use in edit.
+
+### ISSUE-54 — V7 not wired to R.plannerUI.open
+Status: Open (Milestone 6)
+Severity: Medium
+Next: Milestone 6.
+
+### ISSUE-55 — Time-aware placement absent
+Status: Open (deferred)
+Severity: Low
+Next: Deferred.
+
+### ISSUE-56 — pagesPerDayBudget is soft
+Status: Open (Milestone 4)
+Severity: Low
+Next: hard cap x 1.5 in Milestone 4.
+
+### ISSUE-57 — V7 UI edit does not re-validate blocks
+Status: Open
+Severity: Low
+Next: call _validateEdit in _onEditDay.
+---
+
+## Session Update — 2026-10-19 · Agent #19 (M5 + M6)
+
+### RESOLVED
+
+**ISSUE-52** (baseline not active) — RESOLVED (M5)
+  `_collectActivityRanges` reads completed activities + baseline union.
+
+**ISSUE-56** (pagesPerDayBudget soft) — RESOLVED (M4.1 + M5)
+  Day cap enforced via `[PATCH:m4cap]` + `[PATCH:m5-daycap]`.
+
+**ISSUE-57** (edit no re-validate) — RESOLVED (M4)
+  `_validateEdit` called in `_onEditDay`.
+
+**ISSUE-58** (V7 not wired to R.plannerUI.open) — RESOLVED (M6)
+  Route switched idempotently; legacy preserved at `_legacyOpen`.
+
+### OPEN (new)
+
+**ISSUE-59** — Dedup key false-negative (RESOLVED in this session)
+  Status: RESOLVED (M5)
+  Root cause: `_dayKey` used `(plan, round, book, day)` → second block
+  on same day was skipped as "already added". Fixed to include
+  pageRangeOverlap via `_rangesOverlap(s1,e1,s2,e2)`.
+  Evidence: add day 27 with 2 blocks → both added (was: 1).
+
+**ISSUE-60** — T7 assertion too weak (RESOLVED in this session)
+  Status: RESOLVED (M6)
+  Root cause: `d.capacityMinutes <= exp` passed even when all days had
+  capacity 0 (catastrophic). Split into T7a (exact on clean days),
+  T7b (strictly reduced on planned days), T7c (ceiling).
+
+**ISSUE-61** — Dev button duplicated (RESOLVED in this session)
+  Status: RESOLVED (M6)
+  Root cause: two `_injectDevBtn` IIFEs, one from prior patch, one from
+  route patch. Fixed: legacy `_injectDevBtn` removed; only dev mode
+  button remains behind `window.__V7_DEV__`.
+
+**ISSUE-62** — `_inputMeta` null after Generate (RESOLVED)
+  Status: RESOLVED (M5)
+  Root cause: `_onGenerate` returned before setting `_inputMeta` in some
+  branches. Fixed: `_inputMeta = r.meta || null` assigned right after
+  `_input = r.input` on success path.
+
+**ISSUE-63** — Diag card not shown in result branch (RESOLVED)
+  Status: RESOLVED (M6)
+  Root cause: `_renderDayDiagHTML()` was only wired in the settings
+  branch. Fixed: added call after feasibility render in result branch.
+
+### OPEN (remaining)
+
+**ISSUE-64** — Multiple enrollments per book in same round
+  Status: Open (design limit)
+  Severity: Low
+  Context: `_roundIdForBook` returns first matching enrollment. If a
+  book is enrolled twice in same round, only one is visible in
+  `input.books`. Pre-M5 behavior; documented for future.
+  Next: If multi-enrollment becomes required, add explicit disambiguation
+  contract (e.g. enrollment priority field).
+
+**ISSUE-65** — Old activities without plannedPageStart/End
+  Status: Open (accepted limitation)
+  Severity: Low
+  Context: Activities created before M5 lack page range fields. Their
+  status === "completed" is not counted as read progress (conservative,
+  safe). They still reduce day capacity if plannedDurationMinutes exists.
+  Next: Optional one-time migration to populate ranges from task title
+  (e.g. "صفحات 21-30"), or manual fix via UI.
+---
+
+## Session Update — 2026-10-20 · Agent #20 (M7-B)
+
+### RESOLVED in M7-B
+
+- **BUG-A** — `_renderDayBlocksHTML` allAdded overwrite
+- **BUG-J** — Dedup didn't skip cancelled/skipped blocks (T11)
+- **ISSUE-57** — Edit validation not wired to save (T13, T14)
+- **ISSUE-67** — Edit cascade inconsistent (resolved by simplification)
+- **ISSUE-68** — Multi-edit reset (resolved by simple source model)
+- **ISSUE-69** — English validation errors
+- **ISSUE-70** — Dead "افزودن تکمیل" button
+- **ISSUE-71** — Only green-box removal access
+- **ISSUE-72** — Only last session editable (resolved)
+
+### OPEN (new)
+
+**ISSUE-73 — Cascade not shown in edit mode** (design decision)
+Status: Open (by design)
+Severity: Low
+Context: Per Design Agent Option 1, edit mode shows only `_draftState.source`.
+Cascade visible only in Preview.
+Next: Optional "show estimated impact" if UX needs it.
+
+**ISSUE-74 — Draft Preview shows only unallocated pages**
+Status: Open (by design)
+Severity: Low
+Context: If pages already in green-box, preview shows only remaining.
+Next: Optional "شامل اضافه‌شده‌ها" toggle.
+
+**ISSUE-75 — state.js modified during manual test**
+Status: Open (process note)
+Severity: Low
+Context: User's Generate+Add changed `data/state.js` SHA256 (expected).
+Backup: `data/state.js.bak-m7final-<ts>`.
+Next: None.
+
+**ISSUE-76 — Legacy-array suites no `pass` field**
+Status: Open (process note)
+Severity: Low
+Area: `aiNormalizer`, `plannerAllocation`, `dialog`, `loading`, `readingStrategy`, `studySpeed`
+Context: 6 suites return raw arrays (30 items, no throw, no `pass`).
+Next: Optionally wrap. Non-blocking.
+
+### STILL OPEN (deferred)
+
+- **ISSUE-64** — multi-enrollment per book
+- **ISSUE-65** — old activities without plannedPageStart/End
+---
+
+## Session Update — 2026-10-21 · Agent #22 · R3 Complete
+
+### RESOLVED in R3
+
+**ISSUE-90** — Demand double-count (planned counted twice)
+Status: RESOLVED
+Area: `planner-demand-v6.js::computeStudiedPages`
+Fix: cross-round completed + plannedPages fallback; planned filtered by round.
+
+**ISSUE-91** — Planned pages re-allocated (page ranges overlap)
+Status: RESOLVED
+Area: `planner-schedule-v6-4.js::getAllocatedRanges`
+Fix: exclude planned/in_progress ranges from remainingRanges.
+
+**ISSUE-92** — Capacity trigger yielded `proposedPages: 0`
+Status: RESOLVED
+Area: `planner-replan-v7.js`
+Fix: recompute demands on `modSnap` after cancellation (F2-A).
+
+**ISSUE-93** — Replan cancelled only 78 of 122 future activities
+Status: RESOLVED
+Area: `planner-replan-v7.js::_computeCancelIds`
+Fix: read live state, not filtered snapshot. Sweep in Apply.
+
+**ISSUE-94** — Duplicate cancelled tasks appeared in projection
+Status: RESOLVED
+Area: `scheduling-projection-v20.js::projectTask`
+Fix: return null for `task.cancelled === true`.
+
+**ISSUE-95** — Orphan tasks after Apply (activity cancelled, task alive)
+Status: RESOLVED
+Area: `planner-replan-apply-v7.js`
+Fix: sweep at Apply — any task whose source activity is cancelled/missing → cancelled.
+
+**ISSUE-96** — Calendar didn't extend past last round endDate (3 Azar)
+Status: RESOLVED
+Area: `planner-snapshot-v6.js::_buildCalendar` + `planner-allocation-v6-2.js::buildCapacityLedger`
+Fix: fill gap to examDate; remove `roundUsable.endDate` filter.
+
+**ISSUE-97** — Sequential allocation not applied (books interleaved)
+Status: RESOLVED
+Area: `planner-allocation-v6-2.js::_allocateAlgorithmic`
+Fix: `options.sequential` — one book per day, chosen by studyOrder.
+
+**ISSUE-98** — Algorithm filled days greedily, ignored maxDays
+Status: RESOLVED
+Area: `planner-allocation-v6-2.js::_allocateAlgorithmic`
+Fix: proportional dayMinBudget = remaining × (dayCap / totalCap).
+
+**ISSUE-99** — `settings.defaultCapacity` ignored in Replan
+Status: RESOLVED
+Area: `planner-snapshot-v6.js` + `planner-allocation-v6-2.js`
+Fix: pass settings; apply with reserve %.
+
+**ISSUE-100** — Strategy window used 30-day hardcoded fallback
+Status: RESOLVED
+Area: `planner-recovery-v7.js::resolveStrategyWindow`
+Fix: fallback to plan.examDate.
+
+**ISSUE-101** — `_getBoundsForReplan` accepted `blocked_by_hard_constraint` as feasible
+Status: RESOLVED
+Area: `planner-replan-ui-v7.js`
+Fix: only accept `feasible` or `feasible_with_warnings`.
+
+**ISSUE-102** — `_addDays`, `_cmp` undefined in Replan files
+Status: RESOLVED
+Area: `planner-replan-v7.js`, `planner-replan-ui-v7.js`
+Fix: local helpers added.
+
+**ISSUE-103** — `openBaselineEditor` and `updateSummary` threw `R is not defined`
+Status: RESOLVED
+Area: `app.js`
+Fix: `var R = window.InternshipResidency;` injected at function start.
+
+### OPEN — CRITICAL
+
+**ISSUE-104** — 11 cancelled residency tasks still render in calendar on 3 Azar
+Status: OPEN
+Severity: HIGH
+Area: `app.js` calendar day-panel renderer
+Context: State is clean (`{completed: 2, cancelled: 313}`, `future planned: 0`).
+Calendar still shows 11 items for `1405/9/03`. Patch `f5d` added `!t.cancelled`
+broadly but did not fix — so data source is NOT `state.tasks`.
+Audit: `_audit-calendar/` (app.js, residency-dashboard-v19.js, scheduling-projection-v20.js,
+task-projection-v4.js, day-timeline-v20.js).
+Next: Agent #23 must audit `app.js` calendar renderer, determine data source,
+and apply filter at the correct layer.
+
+### OPEN — LOW
+
+**ISSUE-105** — Replan `isNoop` message still says "کاری برای جبران پیدا نشد"
+even for capacity triggers when debt=0 and capacity_rebuild would work.
+Status: OPEN
+Severity: LOW
+Area: `planner-replan-ui-v7.js`
+Next: mode-aware message (partially done in F4-C, may need more work).
+
+**ISSUE-106** — Replan bounds calculation triggers many `generateReplanProposal` calls
+Status: OPEN
+Severity: LOW (performance)
+Area: `_getBoundsForReplan`
+Context: Binary search over maxDays — runs O(log N) full proposals.
+Next: cache or approximate.
+---
+
+## Session Update — 2026-10-22 · Agent #24 · R2-H + R2-I Closeout
+
+### RESOLVED
+
+- W-45 — Wizard entry button (🧙) opened Plan Manager instead of Wizard. Fixed via handler rewrite to prefer `openWizard()` with fallback.
+- R2H-01 — Today CTA misleading. Fixed with `plan-idle` branch.
+- R2H-02 — Program tools ugly. Redesigned as 4-card glassmorphism.
+- R2H-03 — Manage inputs center-aligned. Fixed with flex-row + left-align.
+- R2H-04 — V7 planner entry missing. Added to Program tools.
+- R2H-Bonus — Future Days Preview added.
+- 9 test failures in `input.__tests` (8) + `ui.__tests` (1) — root cause: state-dependent tests against live state. Fixed by isolated fixture (ADR-087).
+
+### WAIVED (OWNER DECISION)
+
+- 2 automated Gate 2 tests (focus restoration + aria-live timing after `.click()`). Cause: WebView2 `.click()` focus behavior — not a code bug. Manual keyboard passes.
+
+### OPEN — DEFERRED
+
+- W-43 — utilization > 100% (122%, 244%) in Workspace. **P1, NEEDS INVESTIGATION.** Deferred to Workspace phase.
+- ISSUE-76 — `plannerAllocation.__tests` returns raw array. Deferred to Maintenance.
+- CSS mass cleanup (158 PATCH blocks, 2945 `!important`). NOT AUTHORIZED.
+- Wizard reset-all flow — NOT TESTED. Needs isolated environment.
+
+### NEW — LOW
+
+- ISSUE-107 — Header showed «مرحله X از ۱۱» while STEPS.length=13. RESOLVED via `_fa(_step + 1)` in r2i-int2.
+- ISSUE-108 — `_refreshFutureDaysOnly` relied on `document.activeElement` (cleared by WebView2 after DOM swap). RESOLVED via explicit `opts.pickIdx`/`opts.navDir` param.
+- ISSUE-109 — Group label display: welcome + summary show group only (no step count). By design, documented.
+- ISSUE-110 — `.r19-form-row` container assumption for inline errors failed plan step. RESOLVED via keyword + broad field scan (ADR-086).
+
+### Test Baseline
+
+allocator 43/43 · input 44/44 (fixture) · ui 45/45 (fixture) · schedulingConflict 48/48 · schedulingProjection 37/37 · dayTimeline 12/12 · replanTrigger 43/43 · availabilityEngine 18/18 · baseline 18/18 · plannerReplan 37/37 · plannerReplanApply 16/16 · plannerSchedule 9/9 · plannerAllocation 6/6 (legacy) · **TOTAL 376/376**
+
+
+---
+
+## Session Update — 2026-10-22 · Agent #25 · R2-I + Workspace
+
+### RESOLVED
+
+ISSUE-111 Wizard CTA renamed to «ساخت برنامه»
+ISSUE-112 Wizard step count unified to 13
+ISSUE-113 aria-describedby per-field on Plan; wiz-error-box fallback
+ISSUE-114 Guard 4/4 PASS, real state preserved
+ISSUE-115 Header labels Persian
+ISSUE-116 Card actions 2+menu
+ISSUE-117 TimeGrid button injected
+ISSUE-118 W-43 formula 7/7 fixture PASS
+ISSUE-119 Proposal empty-state 3-step
+ISSUE-120 Context Inspector Persian via MutationObserver
+
+### OPEN — LOW
+
+ISSUE-121 superseded/active still English in Version History
+Status: Open. Severity: Low. Next: add to PROP_LABELS.
+
+ISSUE-122 Proposal 3-step with real proposal NOT TESTED
+Status: Open. Severity: Low. Next: Generate + verify.
+
+ISSUE-123 Review tab full Persian with real data NOT TESTED
+Status: Open. Severity: Low.
+
+ISSUE-124 W-43 not reproducible with current data
+Status: Open (instrumented). Severity: P2 (was P1).
+
+ISSUE-125 workspace-v13.js + .pw13-* CSS dead code confirmed
+Status: Open (propose only). Severity: Low.
+
+### Deferred to Agent #26
+
+- superseded/active mapping
+- Proposal real-data test
+- Review full Persian
+- W-43 fixture reproduction
+- workspace-v13 removal
+- Final Regression + Release

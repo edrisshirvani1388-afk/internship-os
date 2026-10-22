@@ -72,23 +72,16 @@
     return overlaps;
   }
 
-  PA.buildCapacityLedger = function (plannerInput, options) {
+        PA.buildCapacityLedger = function (plannerInput, options) {
     options = options || {};
     if (!plannerInput) return { daily: [], deficits: [], warnings: [] };
     var deficits = [], warnings = [];
     _detectRoundOverlaps(plannerInput.rounds || []).forEach(function (o) { deficits.push(o); });
 
     var examDate = plannerInput.plan && plannerInput.plan.examDate || null;
-    var roundUsable = {};
-    (plannerInput.rounds || []).forEach(function (r) {
-      if (!r) return;
-      var end = r.endDate;
-      if (examDate && _cmp(end, examDate) > 0) end = examDate;
-      roundUsable[r.id] = { startDate: r.startDate, endDate: end };
-    });
-
     var today = _today();
     var committedByDate = {};
+    
     (plannerInput.activities || []).forEach(function (a) {
       if (!a || !a.plannedDate) return;
       if (!_consumesCapacity(a.status)) return;
@@ -98,7 +91,6 @@
       committedByDate[a.plannedDate] = (committedByDate[a.plannedDate] || 0) + remain;
     });
 
-    // Phase 2: Non-residency capacity consumers (tasks with duration)
     (plannerInput.nonResidencyConsumers || []).forEach(function (t) {
       if (!t || !t.date) return;
       if (t.completed) return;
@@ -110,17 +102,22 @@
     var daily = [];
     (plannerInput.calendar || []).forEach(function (c) {
       if (!c || !c.roundId) return;
-      if (examDate && _cmp(c.date, examDate) > 0) {
-        deficits.push({ type: "exam_date_limit", date: c.date, severity: "info" });
-        return;
-      }
+      if (examDate && _cmp(c.date, examDate) > 0) return;
       if (today && _cmp(c.date, today) < 0) return;
-      var ru = roundUsable[c.roundId];
-      if (ru) {
-        if (ru.startDate && _cmp(c.date, ru.startDate) < 0) return;
-        if (ru.endDate && _cmp(c.date, ru.endDate) > 0) return;
+      
+      /* [PATCH:f4b30-ledger] removed round endDate filter to allow gap days */
+      var _uCaps = plannerInput.settings && plannerInput.settings.defaultCapacity;
+      var _uPct = (plannerInput.settings && typeof plannerInput.settings.reservePercent === "number") ? plannerInput.settings.reservePercent : 10;
+      var _dtMap = { "normal": "normal", "free": "free", "off": "off", "pre_shift": "preShift", "shift": "shift", "post_shift": "postShift" };
+      var _cKey = _dtMap[c.dayType] || "normal";
+      var _uCapRaw = (_uCaps && _uCaps[_cKey] != null) ? Number(_uCaps[_cKey]) : null;
+      var capacity;
+      if (_uCapRaw !== null && !isNaN(_uCapRaw)) {
+        capacity = Math.max(0, _uCapRaw - Math.floor(_uCapRaw * _uPct / 100));
+      } else {
+        capacity = Math.max(0, c.finalCapacityMinutes | 0);
       }
-      var capacity = Math.max(0, c.finalCapacityMinutes | 0);
+
       var committed = committedByDate[c.date] || 0;
       if (committed > capacity) committed = capacity;
       daily.push({
@@ -134,7 +131,7 @@
     });
     daily.sort(function (a, b) { return _cmp(a.date, b.date); });
     return { daily: daily, deficits: deficits, warnings: warnings };
-  };
+  };;;;
 
   function _score(demand, remainingMin, totalFutureCap, options, strategyCtx) {
     var urgency = totalFutureCap > 0 ? (remainingMin / totalFutureCap) : 0;
@@ -183,7 +180,8 @@
   }
 
   /* ─── Algorithmic ─── */
-  function _allocateAlgorithmic(demandList, days, options, deficits, warnings, strategyCtx) {
+        function _allocateAlgorithmic(demandList, days, options, deficits, warnings, strategyCtx) {
+    /* [PATCH:f6-seq-prop] Sequential + Proportional allocation */
     var allocations = [];
     var remainingMin = {};
     var allocatedPagesSoFar = {};
@@ -191,19 +189,49 @@
       remainingMin[x.demand.id] = x.demand.estimatedRemainingMinutes;
       allocatedPagesSoFar[x.demand.id] = 0;
     });
+    
     var totalFutureCap = days.reduce(function (s, d) { return s + d.allocatableMinutes; }, 0);
+    var remainingCapacityMinutes = totalFutureCap;
 
     days.forEach(function (day, dayIndex) {
       var capLeft = day.allocatableMinutes;
+      if (capLeft <= 0) return;
+
+      var totalRemainingMin = 0;
+      demandList.forEach(function(x) { totalRemainingMin += remainingMin[x.demand.id]; });
+      if (totalRemainingMin <= 0) return;
+
+      var dayMinBudget = remainingCapacityMinutes > 0
+        ? Math.ceil(totalRemainingMin * (day.allocatableMinutes / remainingCapacityMinutes))
+        : totalRemainingMin;
+
+      var dayMinUsed = 0;
       var perDay = { byDemand: {}, byDate: 0, blocked: {} };
       var safety = 0;
-      while (capLeft > 0 && safety < 500) {
+
+      var _seq = !!(options && options.sequential);
+      var _dayBookId = null;
+
+      while (capLeft > 0 && safety < 500 && dayMinUsed < dayMinBudget) {
         safety++;
         var candidates = demandList.filter(function (x) {
           if (perDay.blocked[x.demand.id]) return false;
-          return remainingMin[x.demand.id] > 0;
+          if (remainingMin[x.demand.id] <= 0) return false;
+          if (_seq && _dayBookId && x.demand.bookId !== _dayBookId) return false; /* Sequential lock */
+          return true;
         });
         if (candidates.length === 0) break;
+
+        if (_seq && !_dayBookId) {
+          var _minOrd = 999999, _minBk = null;
+          candidates.forEach(function (x) {
+            var _o = (x.demand.studyOrder != null ? x.demand.studyOrder : 999999);
+            if (_o < _minOrd) { _minOrd = _o; _minBk = x.demand.bookId; }
+          });
+          _dayBookId = _minBk;
+          candidates = candidates.filter(function (x) { return x.demand.bookId === _minBk; });
+          if (candidates.length === 0) break;
+        }
 
         var _perDayCtx = strategyCtx ? Object.assign({}, strategyCtx, { dayIndex: dayIndex }) : null;
         candidates.sort(function (a, b) {
@@ -223,10 +251,16 @@
         });
 
         var chosen = candidates[0];
-        var maxAlloc = Math.min(capLeft, remainingMin[chosen.demand.id]);
+        var _budgetMinLeft = dayMinBudget - dayMinUsed;
+        if (_budgetMinLeft < 1) break;
+
+        var maxAlloc = Math.min(capLeft, remainingMin[chosen.demand.id], _budgetMinLeft);
+        if (maxAlloc < 1) break;
+
         var _baseP = allocatedPagesSoFar[chosen.demand.id] || 0;
         var got = _tryAllocate(PA, chosen.demand, day, maxAlloc, options, perDay, _baseP);
         if (!got) continue;
+
         if (got.minutes > capLeft) {
           got.pages--;
           if (got.pages < 1) { perDay.blocked[chosen.demand.id] = 1; continue; }
@@ -251,9 +285,13 @@
         perDay.byDate += got.minutes;
         remainingMin[chosen.demand.id] -= got.minutes;
         allocatedPagesSoFar[chosen.demand.id] = _baseP + got.pages;
+        dayMinUsed += got.minutes;
         capLeft -= got.minutes;
       }
+
+      remainingCapacityMinutes -= day.allocatableMinutes;
     });
+    
     return allocations;
   }
 

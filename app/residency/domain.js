@@ -353,7 +353,50 @@
             def.defaultStudySpeed.pagesPerHour
           )
         },
-        defaultCapacity: Object.assign({}, def.defaultCapacity, rs.settings.defaultCapacity || {})
+        defaultCapacity: Object.assign({}, def.defaultCapacity, rs.settings.defaultCapacity || {}),
+        dailyLifeSchedule: (function(v) {
+          var dls = v && typeof v === "object" ? v : null;
+          var sw = (dls && dls.studyWindow) || {};
+          var VALID_WD = ["saturday","sunday","monday","tuesday","wednesday","thursday","friday"];
+          function _st(t, def) {
+            if (typeof t !== "string") return def;
+            if (!/^\d{2}:\d{2}$/.test(t)) return def;
+            var p = t.split(":");
+            var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+            if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return def;
+            return t;
+          }
+          var startTime = _st(sw.startTime, "06:30");
+          var endTime = _st(sw.endTime, "23:00");
+          var blocks = (dls && Array.isArray(dls.weeklyBlocks)) ? dls.weeklyBlocks : [];
+          var normalizedBlocks = [];
+          blocks.forEach(function(b) {
+            if (!b || typeof b !== "object") return;
+            var kinds = ["sleep","meal","hospital","other"];
+            var kind = kinds.indexOf(b.kind) !== -1 ? b.kind : "other";
+            var daysOfWeek = Array.isArray(b.daysOfWeek) ? b.daysOfWeek.filter(function(d) {
+              return VALID_WD.indexOf(d) !== -1;
+            }) : [];
+            var bt = _st(b.startTime, "");
+            var et = _st(b.endTime, "");
+            if (!bt || !et) return;
+            if (bt === et) return;
+            normalizedBlocks.push({
+              id: b.id || ("dls-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,6)),
+              kind: kind,
+              title: b.title || "",
+              daysOfWeek: daysOfWeek,
+              startTime: bt,
+              endTime: et,
+              enabled: b.enabled !== false
+            });
+          });
+          return {
+            version: 1,
+            studyWindow: { startTime: startTime, endTime: endTime },
+            weeklyBlocks: normalizedBlocks
+          };
+        })(rs.settings.dailyLifeSchedule)
       };
     }
     function _arr(name) { return Array.isArray(rs[name]) ? rs[name] : []; }

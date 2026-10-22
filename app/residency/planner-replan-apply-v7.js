@@ -174,6 +174,22 @@
           if (t) { t.completed = false; t.cancelled = true; t.updatedAt = Date.now(); }
         }
       });
+      /* [PATCH:f5b-orphan] sweep: cancel orphan tasks whose activity is cancelled/missing */
+      try {
+        (s.tasks || []).forEach(function(t){
+          if (!t) return;
+          if (t.cancelled === true) return;
+          if (t.sourceType !== "residency_activity" && t.sourceType !== "residencyActivity") return;
+          var _src = t.residencyActivityId || t.sourceId;
+          if (!_src) return;
+          var _act = (s.residency.activities || []).find(function(x){ return x && x.id === _src; });
+          if (!_act || _act.status === "cancelled" || _act.status === "skipped") {
+            t.cancelled = true;
+            t.updatedAt = Date.now();
+          }
+        });
+      } catch (_sweepErr) { console.warn("[f5b] orphan sweep failed:", _sweepErr); }
+
       _maybeForceFail("cancel");
 
       // 2. Create new activities
@@ -373,7 +389,35 @@
     // ─── T7: force fail throws and flag cleared ───
     var threw = false;
     window.__PRA_FORCE_FAIL__ = "cancel";
-    try { _maybeForceFail("cancel"); } catch (e) { threw = true; }
+    try {       /* [PATCH:f7c-harddelete] Physically remove future-planned activities with no progress */
+      try {
+        var _hdIds = {};
+        cancelledIds.forEach(function (aid) {
+          var _a = (s.residency.activities || []).find(function (x) { return x && x.id === aid; });
+          if (!_a) return;
+          if (typeof _a.actualPages === "number" && _a.actualPages > 0) return;
+          if (_a.locked) return;
+          _hdIds[aid] = true;
+        });
+        if (Object.keys(_hdIds).length > 0) {
+          var _beforeCount = s.residency.activities.length;
+          s.residency.activities = s.residency.activities.filter(function (x) { return x && !_hdIds[x.id]; });
+          s.tasks = (s.tasks || []).filter(function (t) {
+            if (!t) return false;
+            if (t.sourceType !== "residency_activity" && t.sourceType !== "residencyActivity") return true;
+            var ref = t.residencyActivityId || t.sourceId;
+            if (!ref) return true;
+            return !_hdIds[ref];
+          });
+          var _afterCount = s.residency.activities.length;
+          console.log("[f7c-hd] hard-deleted", (_beforeCount - _afterCount), "activities with no progress");
+        }
+      } catch (_hdErr) {
+        warnings.push({ type: "hard_delete_failed", message: String(_hdErr) });
+        console.warn("[f7c-hd] failed:", _hdErr);
+      }
+
+      _maybeForceFail("cancel"); } catch (e) { threw = true; }
     window.__PRA_FORCE_FAIL__ = null;
     t("T7: force fail throws", threw === true);
     t("T7b: force fail flag cleared after test",

@@ -16,6 +16,22 @@
   }
   function _cmp(a, b) { return LIB && LIB.date ? LIB.date.compareJalaliDate(a, b) : 0; }
   function _today() { return LIB && LIB.date ? LIB.date.todayJalaliString() : ""; }
+  /* [PATCH:f4b21-addDays] helper for window calculation */
+  function _addDays(d, n) {
+    if (!LIB || !LIB.date) return d;
+    var p = LIB.date.parseJalali(d);
+    if (!p) return d;
+    var r = LIB.date.addJalaliDays(p.jy, p.jm, p.jd, n);
+    return LIB.date.dateKey(r.jy, r.jm, r.jd);
+  }
+  /* [PATCH:f4b20-addDays] helper for window calculation */
+  function _addDays(d, n) {
+    if (!LIB || !LIB.date) return d;
+    var p = LIB.date.parseJalali(d);
+    if (!p) return d;
+    var r = LIB.date.addJalaliDays(p.jy, p.jm, p.jd, n);
+    return LIB.date.dateKey(r.jy, r.jm, r.jd);
+  }
 
   function _applyCancellationsToSnapshot(snapshot, cancelIds) {
     var copy = JSON.parse(JSON.stringify(snapshot));
@@ -137,6 +153,43 @@
     return { unmet: unmet, demandMap: demandMap };
   }
 
+  /* [PATCH:r3f3] cancel-scope helper — mode-specific activity selection */
+  function _computeCancelIds(mode, snap, impact) {
+    var cancelIds = [];
+    if (!snap || !Array.isArray(snap.activities)) return cancelIds;
+
+    if (mode === "rebuild_affected_scope") {
+      return (impact && Array.isArray(impact.cancelableActivityIds))
+        ? impact.cancelableActivityIds.slice()
+        : [];
+    }
+
+    if (mode === "full_replan") {
+      var tFull = _today();
+      snap.activities.forEach(function (a) {
+        if (!a) return;
+        if (a.locked) return;
+        if (a.status === "completed" || a.status === "cancelled" || a.status === "skipped") return;
+        if (a.plannedDate && _cmp(a.plannedDate, tFull) < 0) return;
+        cancelIds.push(a.id);
+      });
+      return cancelIds;
+    }
+
+    if (mode === "capacity_rebuild") {
+      var tCap = _today();
+      snap.activities.forEach(function (a) {
+        if (!a) return;
+        if (a.locked) return;
+        if (a.status !== "planned") return;
+        if (a.plannedDate && _cmp(a.plannedDate, tCap) < 0) return;
+        cancelIds.push(a.id);
+      });
+      return cancelIds;
+    }
+
+    return cancelIds;
+  }
   PRp.generateReplanProposal = function (planId, options) {
     options = options || {};
     var mode = options.mode || "recover";
@@ -151,25 +204,44 @@
     var execAnalysis = PE.analyzeExecution(snap);
     var impact = PI.analyzeImpact(execAnalysis, snap, options.scope || "plan");
 
-    var cancelIds = [];
-    if (mode === "rebuild_affected_scope") {
-      cancelIds = impact.cancelableActivityIds.slice();
-    } else if (mode === "full_replan") {
-      var today0 = _today();
-      (snap.activities || []).forEach(function (a) {
-        if (!a) return;
-        if (a.locked) return;
-        if (a.status === "completed" || a.status === "cancelled" || a.status === "skipped") return;
-        if (a.plannedDate && _cmp(a.plannedDate, today0) < 0) return;
-        cancelIds.push(a.id);
-      });
-    }
+    var cancelIds = _computeCancelIds(mode, snap, impact);
 
     var modSnap = _applyCancellationsToSnapshot(snap, cancelIds);
 
+    /* [PATCH:r3f2a] recompute demands on modSnap so cancelled activities don't reduce demand */
+    if (cancelIds.length > 0) {
+      try {
+        var _rebuiltDemands = R.plannerDemand.buildAll({
+          enrollments: modSnap.enrollments || [],
+          books: modSnap.books || [],
+          rounds: modSnap.rounds || [],
+          activities: modSnap.activities || [],
+          defaultPagesPerHour: (modSnap.settings && modSnap.settings.defaultPagesPerHour) || 20
+        });
+        if (Array.isArray(_rebuiltDemands) && _rebuiltDemands.length > 0) {
+          modSnap.demands = _rebuiltDemands;
+        }
+      } catch (_e) {
+        console.warn("[replan] demand rebuild failed:", _e);
+      }
+    }
+
     var reserveInfo = PRc.computeDeadlineReserve(modSnap);
 
+    var _nowT = _today();
+    function _addDaysLocal(d, n) {
+      if (!LIB || !LIB.date) return d;
+      var p = LIB.date.parseJalali(d);
+      if (!p) return d;
+      var r = LIB.date.addJalaliDays(p.jy, p.jm, p.jd, n);
+      return LIB.date.dateKey(r.jy, r.jm, r.jd);
+    }
     var window = PRc.resolveStrategyWindow(strategy, modSnap, execAnalysis, options);
+    /* [PATCH:f4b30-window] Force full window for capacity_rebuild */
+    if (mode === "capacity_rebuild" || mode === "full_replan") {
+      window = { start: _addDaysLocal(_nowT, 1), end: null };
+    }
+
     var windowed = JSON.parse(JSON.stringify(modSnap));
     windowed.calendar = (windowed.calendar || []).filter(function (c) {
       if (!c || !c.date) return false;
@@ -178,7 +250,14 @@
       return true;
     });
 
-    // ─── Phase 26.1: scope demands to real debt for recover+carry_forward ───
+    /* [PATCH:f4b30-maxdays] */
+    if (options.maxDays && options.maxDays > 0) {
+      /* [PATCH:f6-maxdays] slice from TODAY, not round start */
+      var _tNow = _today();
+      var _futureCal = windowed.calendar.filter(function(c) { return _cmp(c.date, _tNow) >= 0; });
+      windowed.calendar = _futureCal.slice(0, options.maxDays);
+    }
+
     if (mode === "recover" && strategy === "carry_forward") {
       var debtScope = _computeDebtScope(execAnalysis);
       if (debtScope.totalPages === 0) {
@@ -187,7 +266,14 @@
       windowed.demands = _scopeDemandsToDebt(windowed.demands || [], debtScope);
     }
 
-    var constrained = PRes.runConstrainedAllocation(windowed, options);
+    var _constrainOpts = {};
+    Object.keys(options).forEach(function (k) { _constrainOpts[k] = options[k]; });
+    if (mode === "capacity_rebuild" || mode === "full_replan") {
+      _constrainOpts.sequential = true;
+    }
+    _constrainOpts.sessionMinutes = options.sessionMinutes || 90;
+    
+    var constrained = PRes.runConstrainedAllocation(windowed, _constrainOpts);
     var proposalId = _mkId("replan");
     var sched = PS.generateSchedule(windowed, constrained, proposalId, options);
     var proposed = sched.activities || [];
@@ -214,7 +300,7 @@
     var reserveCalc = PRc.reserveFromDemands(unmetInfo.unmet, unmetInfo.demandMap, defSpeed);
     // Phase 26.2b: buffer consumed = minutes of activities actually proposed,
     // capped at remaining pool. Never fill pool just because unmet demand is huge.
-    var reserveConsumed = Math.min(reserveInfo.remainingMinutes, proposedMin);
+    var reserveConsumed = (mode === "capacity_rebuild" || mode === "full_replan") ? 0 : Math.min(reserveInfo.remainingMinutes, proposedMin); /* [PATCH:f4b7-reserve] */ /* [PATCH:f4b5d-reserve] */
 
     var fingerprint = PP.computeFingerprint(rawSnap);
 
@@ -525,7 +611,140 @@
     );
     t("T20: only-cancelled → count 0, peak 0", sim2.activityCount === 0 && sim2.peakDailyMinutes === 0);
 
-    var passed = results.filter(function (r) { return r.pass; }).length;
+        /* [PATCH:r3f1-tests] F1 contract validation: cancellation frees capacity */
+    try {
+      var _PA_ = R.plannerAllocation;
+      if (_PA_ && typeof _PA_.buildCapacityLedger === "function") {
+        var _LIB_ = window.InternshipLib;
+        var _today_ = _LIB_.date.todayJalaliString();
+        var _p0_ = _LIB_.date.parseJalali(_today_);
+        var _d30_ = _LIB_.date.addJalaliDays(_p0_.jy, _p0_.jm, _p0_.jd, 30);
+        var _future_ = _LIB_.date.dateKey(_d30_.jy, _d30_.jm, _d30_.jd);
+        var _d90_ = _LIB_.date.addJalaliDays(_p0_.jy, _p0_.jm, _p0_.jd, 90);
+        var _exam_ = _LIB_.date.dateKey(_d90_.jy, _d90_.jm, _d90_.jd);
+        var _snap1_ = {
+          plan: { examDate: _exam_ },
+          rounds: [{ id: "r-f1t", startDate: _today_, endDate: _exam_ }],
+          activities: [{ id: "a-f1t", status: "planned", plannedDate: _future_, plannedDurationMinutes: 60, actualDurationMinutes: 0, roundId: "r-f1t" }],
+          calendar: [{ date: _future_, roundId: "r-f1t", finalCapacityMinutes: 100 }],
+          nonResidencyConsumers: []
+        };
+        var _l1_ = _PA_.buildCapacityLedger(_snap1_, {});
+        var _d1_ = _l1_.daily.find(function(x){ return x.date === _future_; });
+        var _before_ = _d1_ ? _d1_.allocatableMinutes : -1;
+        var _snap2_ = _applyCancellationsToSnapshot(_snap1_, ["a-f1t"]);
+        t("T21: cancelled activity removed from snapshot", _snap2_.activities.length === 0);
+        var _l2_ = _PA_.buildCapacityLedger(_snap2_, {});
+        var _d2_ = _l2_.daily.find(function(x){ return x.date === _future_; });
+        var _after_ = _d2_ ? _d2_.allocatableMinutes : -1;
+        t("T22: capacity before cancel == 40", _before_ === 40);
+        t("T23: capacity after cancel == 100", _after_ === 100);
+        t("T24: cancellation frees exactly 60 min", (_after_ - _before_) === 60);
+      } else {
+        t("T21-T24: skipped (PA.buildCapacityLedger missing)", true);
+      }
+    } catch (_e_) {
+      t("T21-T24: exception", false);
+      console.log("[r3f1-test exception]", _e_);
+    }
+    /* [PATCH:r3f2-tests] F2 invariant tests */
+    try {
+      var _LIB_F2 = window.InternshipLib;
+      var _tNowF2 = _LIB_F2.date.todayJalaliString();
+
+      var _s25 = {
+        enrollments: [{ id: "e-t25", bookId: "b-t25", roundId: "r-t25", targetCoveragePercent: 100 }],
+        books: [{ id: "b-t25", title: "B25", totalPages: 100 }],
+        rounds: [{ id: "r-t25", planId: "p-t25", startDate: _tNowF2, endDate: _tNowF2 }],
+        activities: [{ id: "a-pl", kind: "study", bookId: "b-t25", roundId: "r-t25", status: "planned", plannedPageStart: 1, plannedPageEnd: 20, plannedPages: 20 }]
+      };
+      var _d25 = R.plannerDemand.buildAll({ enrollments: _s25.enrollments, books: _s25.books, rounds: _s25.rounds, activities: _s25.activities, defaultPagesPerHour: 20 });
+      t("T25: planned 20p -> demand 80 remaining", _d25[0] && _d25[0].remainingPages === 80);
+
+      var _s26 = _applyCancellationsToSnapshot(_s25, ["a-pl"]);
+      var _d26 = R.plannerDemand.buildAll({ enrollments: _s26.enrollments, books: _s26.books, rounds: _s26.rounds, activities: _s26.activities, defaultPagesPerHour: 20 });
+      t("T26: after cancel -> demand 100 remaining", _d26[0] && _d26[0].remainingPages === 100);
+
+      var _s27 = {
+        enrollments: [
+          { id: "e-r1", bookId: "b-x", roundId: "r1", targetCoveragePercent: 100 },
+          { id: "e-r2", bookId: "b-x", roundId: "r2", targetCoveragePercent: 100 }
+        ],
+        books: [{ id: "b-x", title: "X", totalPages: 100 }],
+        rounds: [
+          { id: "r1", planId: "p-x", startDate: _tNowF2, endDate: _tNowF2, order: 1 },
+          { id: "r2", planId: "p-x", startDate: _tNowF2, endDate: _tNowF2, order: 2 }
+        ],
+        activities: [{ id: "a-r1", kind: "study", bookId: "b-x", roundId: "r1", status: "planned", plannedPageStart: 1, plannedPageEnd: 30, plannedPages: 30 }]
+      };
+      var _d27 = R.plannerDemand.buildAll({ enrollments: _s27.enrollments, books: _s27.books, rounds: _s27.rounds, activities: _s27.activities, defaultPagesPerHour: 20 });
+      var _r1d = _d27.find(function(d){ return d.roundId === "r1"; });
+      var _r2d = _d27.find(function(d){ return d.roundId === "r2"; });
+      t("T27: cross-round planned -> r1=70, r2=100", _r1d && _r1d.remainingPages === 70 && _r2d && _r2d.remainingPages === 100);
+
+      var _s28 = {
+        enrollments: [{ id: "e-c", bookId: "b-c", roundId: "r-c", targetCoveragePercent: 100 }],
+        books: [{ id: "b-c", title: "C", totalPages: 100 }],
+        rounds: [{ id: "r-c", planId: "p-c", startDate: _tNowF2, endDate: _tNowF2 }],
+        activities: [{ id: "a-done", kind: "study", bookId: "b-c", roundId: "r-c", status: "completed", actualPages: 25, plannedPageStart: 1, plannedPageEnd: 25 }]
+      };
+      var _d28 = R.plannerDemand.buildAll({ enrollments: _s28.enrollments, books: _s28.books, rounds: _s28.rounds, activities: _s28.activities, defaultPagesPerHour: 20 });
+      t("T28: completed 25p -> demand 75 remaining", _d28[0] && _d28[0].remainingPages === 75);
+
+      if (R.plannerSchedule && typeof R.plannerSchedule.getAllocatedRanges === "function") {
+        var _acts29 = [
+          { kind: "study", bookId: "b-g", roundId: "r-g", status: "planned", plannedPageStart: 1, plannedPageEnd: 20 },
+          { kind: "study", bookId: "b-g", roundId: "r-g", status: "in_progress", plannedPageStart: 21, plannedPageEnd: 30 },
+          { kind: "study", bookId: "b-g", roundId: "r-g", status: "completed", plannedPageStart: 31, plannedPageEnd: 40 },
+          { kind: "study", bookId: "b-g", roundId: "other", status: "planned", plannedPageStart: 41, plannedPageEnd: 50 }
+        ];
+        var _got29 = R.plannerSchedule.getAllocatedRanges(_acts29, "b-g", "r-g");
+        t("T29: getAllocatedRanges merges in-scope planned+in_progress (1-30)", _got29.length === 1 && _got29[0].start === 1 && _got29[0].end === 30);
+      } else {
+        t("T29: skipped (getAllocatedRanges missing)", false);
+      }
+    } catch (_e_f2) {
+      t("T25-T29 exception", false);
+      console.log("[r3f2-tests]", _e_f2);
+    }
+
+    /* [PATCH:r3f3-tests] F3 cancel-scope tests */
+    try {
+      var _LIB_F3 = window.InternshipLib;
+      var _tF3 = _LIB_F3.date.todayJalaliString();
+      var _p0F3 = _LIB_F3.date.parseJalali(_tF3);
+      var _futF3 = _LIB_F3.date.addJalaliDays(_p0F3.jy, _p0F3.jm, _p0F3.jd, 5);
+      var _futStrF3 = _LIB_F3.date.dateKey(_futF3.jy, _futF3.jm, _futF3.jd);
+      var _pastF3 = _LIB_F3.date.addJalaliDays(_p0F3.jy, _p0F3.jm, _p0F3.jd, -5);
+      var _pastStrF3 = _LIB_F3.date.dateKey(_pastF3.jy, _pastF3.jm, _pastF3.jd);
+
+      var _mockF3 = { activities: [
+        { id: "a1", status: "planned",     plannedDate: _futStrF3, locked: false },
+        { id: "a2", status: "in_progress", plannedDate: _futStrF3, locked: false },
+        { id: "a3", status: "completed",   plannedDate: _futStrF3, locked: false },
+        { id: "a4", status: "planned",     plannedDate: _futStrF3, locked: true },
+        { id: "a5", status: "planned",     plannedDate: _pastStrF3, locked: false },
+        { id: "a6", status: "partial",     plannedDate: _futStrF3, locked: false }
+      ]};
+
+      var _cCap = _computeCancelIds("capacity_rebuild", _mockF3, null);
+      t("T30: capacity_rebuild cancels future planned only", _cCap.length === 1 && _cCap[0] === "a1");
+      t("T31: capacity_rebuild preserves in_progress", _cCap.indexOf("a2") === -1);
+      t("T32: capacity_rebuild preserves completed", _cCap.indexOf("a3") === -1);
+      t("T33: capacity_rebuild preserves locked", _cCap.indexOf("a4") === -1);
+      t("T34: capacity_rebuild preserves past-dated", _cCap.indexOf("a5") === -1);
+      t("T35: capacity_rebuild preserves partial", _cCap.indexOf("a6") === -1);
+
+      var _cFull = _computeCancelIds("full_replan", _mockF3, null);
+      t("T36: full_replan cancels planned+in_progress+partial (future)", _cFull.length === 3 && _cFull.indexOf("a1") !== -1 && _cFull.indexOf("a2") !== -1 && _cFull.indexOf("a6") !== -1);
+
+      var _cEmpty = _computeCancelIds("unknown", _mockF3, null);
+      t("T37: unknown mode -> empty cancelIds", _cEmpty.length === 0);
+    } catch (_e_f3) {
+      t("T30-T37 exception", false);
+      console.log("[r3f3-tests]", _e_f3);
+    }
+var passed = results.filter(function (r) { return r.pass; }).length;
     var total = results.length;
     console.log("\n══════════════════════════════════════");
     console.log("📊 Passed: " + passed + " / " + total);

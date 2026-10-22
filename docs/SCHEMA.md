@@ -504,3 +504,95 @@ Same shape as before, updated per release:
 No new fields in `window.INTERNSHIP_STATE`. `data/` preservation is
 handled entirely at the installer layer (`release.iss` excludes `data\`
 from the wildcard copy).
+
+
+## v22 Addition — Daily Life Schedule (additive, no bump)
+
+Path: state.residency.settings.dailyLifeSchedule
+
+Shape:
+```
+{
+  version: 1,
+  studyWindow: { startTime: "HH:mm", endTime: "HH:mm" },
+  weeklyBlocks: [ {
+    id: "dls-...",
+    kind: "sleep" | "meal" | "hospital" | "other",
+    title: "string",
+    daysOfWeek: ["saturday", ...],
+    startTime: "HH:mm", endTime: "HH:mm",
+    enabled: true,
+    rotationId: "string|null"
+  } ]
+}
+```
+
+Default: studyWindow {06:30, 23:00}, weeklyBlocks [].
+
+Validation:
+- studyWindow.startTime < endTime
+- block startTime !== endTime (either can be overnight)
+- daysOfWeek subset of standard weekdays
+
+## studyHours / defaultCapacity Sync
+
+settings.studyHoursByDayType (hours) and settings.defaultCapacity (minutes)
+synced on Wizard commit: defaultCapacity.key = studyHours.key x 60.
+defaultCapacity is source of truth for planner.
+## v22 Additions — V7 Activity Contract (M5/M6, additive, no bump)
+
+Schema stays v22. No migration.
+
+### state.residency.activities[] — V7 shape (from `_buildDayActivity`)
+
+    {
+      id: "act-v7-<ts>-<rand>",
+      kind: "study",
+      planId, roundId, bookId, subjectId,
+      plannedDate: "YYYY/M/D",
+      plannedStartTime: "HH:MM" | null,
+      plannedDurationMinutes: number | null,
+      plannedPages: number,
+      plannedPageStart: number,     // v7-only, additive
+      plannedPageEnd: number,       // v7-only, additive
+      actualPages: 0,
+      actualDurationMinutes: 0,
+      actualPageRanges: [],
+      status: "planned" | "in_progress" | "completed" | "cancelled",
+      sourceType: "planner",
+      sourceId: "v7-ui",
+      taskId: null,
+      locked: false,
+      notes: "",
+      reviewTarget: null, reviewMeta: null, assessmentId: null,
+      createdAt, updatedAt
+    }
+
+All new fields nullable / default. Legacy activities (pre-M5) load without
+plannedPageStart/End — treated as "no progress data" (conservative).
+
+### Generated blocks (ephemeral, not stored)
+
+allocator.allocate() returns blocks[]:
+    { date, bookId, bookTitle, startPage, endPage, pages, minutes, sessionIndex }
+Post-Generate, UI adds roundId in-memory (from input.books[].roundId).
+Not persisted — regenerated each Generate.
+
+### Contracts (enforced by tests)
+
+- Dedup: (planId, roundId, bookId, date, pageRangeOverlap).
+- Progress = union(baseline.ranges, completed activity ranges) per enrollment.
+- Allocated = planned/in_progress activity ranges, per-round scoped.
+- Day lock: any planned activity on date -> cap = 0 in next Generate.
+- Route: R.plannerUI.open(planId) -> V7; legacy at _legacyOpen.
+
+### Not stored
+
+- _inputMeta (breakdown, dayBreakdown) — recomputed per Generate.
+- _selectedDays, _editedDays — runtime only, reset in UI.close().
+- _dayBounds — computed from current plan state.
+
+### Frozen — no bump needed
+
+Schema v22 stays. All additions are activity fields and UI state; no
+new top-level namespaces, no migration chain changes.

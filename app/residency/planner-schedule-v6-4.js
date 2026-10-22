@@ -22,41 +22,48 @@
 
   /* ─── Read ranges from existing activities ─── */
   PS.getAlreadyReadRanges = function (activities, bookId, roundId) {
-    var ranges = [];
-    var hasRangeData = false;
-    var cumulativePages = 0;
+  /* [PATCH:f4b7-read] Cross-round completed + plannedPages fallback */
+  var ranges = [];
+  var hasRangeData = false;
+  var cumulativePages = 0;
 
-    (activities || []).forEach(function (a) {
-      if (!a) return;
-      if (a.kind !== "study") return;
-      if (a.bookId !== bookId) return;
-      if (roundId && a.roundId !== roundId) return;
-      if (a.status !== "completed" && a.status !== "partial" && a.status !== "in_progress") return;
+  (activities || []).forEach(function (a) {
+    if (!a) return;
+    if (a.kind !== "study") return;
+    if (a.bookId !== bookId) return;
 
-      if (Array.isArray(a.actualPageRanges) && a.actualPageRanges.length > 0) {
-        hasRangeData = true;
-        a.actualPageRanges.forEach(function (r) {
-          if (r && typeof r.start === "number" && typeof r.end === "number" && r.end >= r.start) {
-            ranges.push({ start: r.start, end: r.end });
-          }
-        });
-      } else if (a.actualPages != null && a.actualPages > 0) {
-        cumulativePages += a.actualPages;
-      }
-    });
-
-    if (!hasRangeData && cumulativePages > 0) {
-      return { ranges: [{ start: 1, end: cumulativePages }], source: "cumulative" };
+    var isDone = (a.status === "completed" || a.status === "partial" || a.status === "in_progress");
+    if (!isDone) {
+      if (roundId && a.roundId !== roundId) return; /* planned scoped to round */
+      return;
     }
-    // merge ranges that have explicit data + cumulative leftover
-    if (cumulativePages > 0) {
-      ranges.push({ start: 1, end: cumulativePages });
+
+    if (Array.isArray(a.actualPageRanges) && a.actualPageRanges.length > 0) {
+      hasRangeData = true;
+      a.actualPageRanges.forEach(function (r) {
+        if (r && typeof r.start === "number" && typeof r.end === "number" && r.end >= r.start) {
+          ranges.push({ start: r.start, end: r.end });
+        }
+      });
+    } else if (typeof a.plannedPageStart === "number" && typeof a.plannedPageEnd === "number") {
+      ranges.push({ start: a.plannedPageStart, end: a.plannedPageEnd });
+      hasRangeData = true;
+    } else if (a.actualPages != null && a.actualPages > 0) {
+      cumulativePages += a.actualPages;
     }
-    return {
-      ranges: PS._mergeRanges(ranges),
-      source: hasRangeData ? "explicit" : "cumulative"
-    };
+  });
+
+  if (!hasRangeData && cumulativePages > 0) {
+    return { ranges: [{ start: 1, end: cumulativePages }], source: "cumulative" };
+  }
+  if (cumulativePages > 0) {
+    ranges.push({ start: 1, end: cumulativePages });
+  }
+  return {
+    ranges: PS._mergeRanges(ranges),
+    source: hasRangeData ? "explicit" : "cumulative"
   };
+};;
 
   PS._mergeRanges = function (ranges) {
     if (!ranges || ranges.length === 0) return [];
@@ -69,6 +76,28 @@
       else out.push(cur);
     }
     return out;
+  };
+
+  /* [PATCH:r3f2c] allocated ranges (planned/in_progress) — excluded from re-allocation */
+  PS.getAllocatedRanges = function (activities, bookId, roundId) {
+    var ranges = [];
+    (activities || []).forEach(function (a) {
+      if (!a) return;
+      if (a.kind && a.kind !== "study") return;
+      if (a.bookId !== bookId) return;
+      if (roundId && a.roundId && a.roundId !== roundId) return;
+      if (a.status !== "planned" && a.status !== "in_progress") return;
+      /* [PATCH:f4b3a-past] exclude past-dated planned — they are missed, not live */
+      if (a.status === "planned" && a.plannedDate) {
+        var _LIBp = window.InternshipLib;
+        var _tNow = (_LIBp && _LIBp.date && _LIBp.date.todayJalaliString) ? _LIBp.date.todayJalaliString() : "";
+        if (_tNow && _LIBp.date && _LIBp.date.compareJalaliDate && _LIBp.date.compareJalaliDate(a.plannedDate, _tNow) < 0) return;
+      }
+      if (typeof a.plannedPageStart !== "number" || typeof a.plannedPageEnd !== "number") return;
+      if (a.plannedPageEnd < a.plannedPageStart) return;
+      ranges.push({ start: a.plannedPageStart, end: a.plannedPageEnd });
+    });
+    return PS._mergeRanges(ranges);
   };
 
   /* ─── Complement ranges within target ─── */
@@ -257,6 +286,29 @@
   };
 
   /* ─── Main: allocation → activities ─── */
+  /* [PATCH:session-merge-postpass] merge tiny sessions on same day/book */
+  function _mergeTinySessions(acts, minPages) {
+    if (!acts || acts.length < 2) return acts;
+    var out = [acts[0]];
+    for (var i = 1; i < acts.length; i++) {
+      var cur = acts[i];
+      var prev = out[out.length - 1];
+      var sameGroup = prev.plannedDate === cur.plannedDate &&
+                      prev.bookId === cur.bookId &&
+                      prev.roundId === cur.roundId;
+      var contiguous = (prev.plannedPageEnd + 1) === cur.plannedPageStart;
+      var tiny = (prev.plannedPages < minPages) || (cur.plannedPages < minPages);
+      if (sameGroup && contiguous && tiny) {
+        prev.plannedPages += cur.plannedPages;
+        prev.plannedPageEnd = cur.plannedPageStart + cur.plannedPages - 1;
+        prev.plannedDurationMinutes += cur.plannedDurationMinutes;
+      } else {
+        out.push(cur);
+      }
+    }
+    return out;
+  }
+
   PS.allocationToActivities = function (allocation, demand, plannerInput, proposalId, options) {
     options = options || {};
     if (!allocation || !demand) return [];
@@ -266,10 +318,26 @@
     if (!target) return [];
 
     var readInfo = PS.getAlreadyReadRanges(plannerInput.activities || [], demand.bookId, demand.roundId);
-    var remainingRanges = PS.complementRanges(target, readInfo.ranges);
+    var _allocatedInfo = PS.getAllocatedRanges(plannerInput.activities || [], demand.bookId, demand.roundId);
+    
+    /* [PATCH:f4b8-sched-base] inject baseline ranges */
+    var _baselineRanges = [];
+    var _enr = (plannerInput.enrollments || []).find(function(e) { return e && e.bookId === demand.bookId && (!demand.roundId || e.roundId === demand.roundId); });
+    var _bk = (plannerInput.books || []).find(function(b) { return b && b.id === demand.bookId; });
+    if (_enr && _bk && R.baseline && R.baseline.resolveForEnrollment) {
+      try {
+        var _eb = R.baseline.resolveForEnrollment(_enr, _bk, plannerInput.enrollments, plannerInput.rounds);
+        if (_eb && Array.isArray(_eb.ranges)) _baselineRanges = _eb.ranges;
+      } catch (e) {}
+    }
+    
+    var _combinedExcluded = PS._mergeRanges((readInfo.ranges || []).concat(_allocatedInfo || []).concat(_baselineRanges));
+    var remainingRanges = PS.complementRanges(target, _combinedExcluded);
     if (remainingRanges.length === 0) return [];
 
-    var sessionSize = PS.computeSessionSize(plannerInput, demand, options);
+    var sessionSize = (options && typeof options.sessionMinutes === "number" && options.sessionMinutes > 0)
+      ? options.sessionMinutes
+      : PS.computeSessionSize(plannerInput, demand, options);
     var pagesPerHour = demand.pagesPerHour || 20;
 
     var activities = [];
@@ -380,12 +448,36 @@
       subIdx++;
     }
 
+    // [PATCH:session-merge-local] merge < 5 page sessions per demand/day
+    if (activities.length >= 2) {
+      var _m = [activities[0]];
+      for (var _mi = 1; _mi < activities.length; _mi++) {
+        var _cur = activities[_mi];
+        var _pv = _m[_m.length - 1];
+        var _contig = (_pv.plannedPageEnd + 1) === _cur.plannedPageStart;
+        if (_cur.plannedPages < 5 && _contig) {
+          _pv.plannedPages += _cur.plannedPages;
+          _pv.plannedPageEnd = _cur.plannedPageStart + _cur.plannedPages - 1;
+          _pv.plannedDurationMinutes += _cur.plannedDurationMinutes;
+        } else {
+          _m.push(_cur);
+        }
+      }
+      activities = _m;
+    }
     // [PATCH:v6.4-page-cursor] return updated cursor to caller
     activities._endCursor = { rangeIdx: rangeIdx, cursor: cursor };
     return activities;
   };
 
   /* ─── Main generator ─── */
+  /* [PATCH:f8-date-sort] chronological comparator (Jalali-aware) */
+  function _cmpDate(a, b) {
+    var LIB = window.InternshipLib;
+    if (LIB && LIB.date && LIB.date.compareJalaliDate) return LIB.date.compareJalaliDate(a, b);
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+
   PS.generateSchedule = function (plannerInput, constrainedResult, proposalId, options) {
     options = options || {};
     var activities = [];
@@ -406,16 +498,20 @@
       byDate[a.date].push(a);
     });
 
-    Object.keys(byDate).sort().forEach(function (date) {
+    Object.keys(byDate).sort(_cmpDate).forEach(function (date) { /* [PATCH:f8-date-sort] */
       var dayCursor = 0;
       var dayAllocs = byDate[date];
       dayAllocs.forEach(function (a) {
         var demand = demandMap[a.demandId];
         if (!demand) return;
-        var generated = PS.allocationToActivities(a, demand, plannerInput, proposalId, {
+        var _innerOpts = {
           _dayCursor: dayCursor,
           _demandCursor: demandCursors[a.demandId] || null
-        });
+        };
+        if (options && typeof options.sessionMinutes === "number" && options.sessionMinutes > 0) {
+          _innerOpts.sessionMinutes = options.sessionMinutes;
+        }
+        var generated = PS.allocationToActivities(a, demand, plannerInput, proposalId, _innerOpts);
         // Save updated cursor for this demand
         if (generated._endCursor) {
           demandCursors[a.demandId] = generated._endCursor;
@@ -438,20 +534,25 @@
         // Detect under-scheduling
         var genPages = generated.reduce(function (s, act) { return s + (act.plannedPages | 0); }, 0);
         var genMin = generated.reduce(function (s, act) { return s + (act.plannedDurationMinutes | 0); }, 0);
-        if (genPages < a.allocatedPages || genMin < a.allocatedMinutes) {
+        var _unmetP = Math.max(0, (a.allocatedPages || 0) - genPages);
+        var _unmetM = Math.max(0, (a.allocatedMinutes || 0) - genMin);
+        // [PATCH:suppress-spurious] only report if unmet is meaningful
+        if (_unmetP > 0 && _unmetM > 5) {
           deficits.push({
             type: "sessionization_deficit",
             demandId: a.demandId,
             date: date,
             allocatedPages: a.allocatedPages,
             scheduledPages: genPages,
-            unmetPages: Math.max(0, a.allocatedPages - genPages),
-            unmetMinutes: Math.max(0, a.allocatedMinutes - genMin),
+            unmetPages: _unmetP,
+            unmetMinutes: _unmetM,
             severity: "warning"
           });
         }
       });
     });
+
+    activities = _mergeTinySessions(activities, 5);
 
     return { activities: activities, deficits: deficits };
   };

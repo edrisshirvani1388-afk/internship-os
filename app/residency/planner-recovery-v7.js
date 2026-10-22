@@ -38,10 +38,15 @@
       var maxDate = null;
       (plannerInput.rounds || []).forEach(function (r) {
         if (!r) return;
-        if (executionAnalysis.affectedRoundIds.indexOf(r.id) === -1) return;
+        if (executionAnalysis.affectedRoundIds && executionAnalysis.affectedRoundIds.indexOf(r.id) === -1) return;
         if (!maxDate || _cmp(r.endDate, maxDate) > 0) maxDate = r.endDate;
       });
-      if (!maxDate) maxDate = _addDays(today, 30);
+      /* [PATCH:f4b17] fallback to examDate instead of arbitrary 30 days */
+      if (!maxDate) {
+        maxDate = (plannerInput.plan && plannerInput.plan.examDate) 
+          ? plannerInput.plan.examDate 
+          : _addDays(today, 60);
+      }
       return { start: _addDays(today, 1), end: maxDate };
     }
     if (strategy === "end_of_month") {

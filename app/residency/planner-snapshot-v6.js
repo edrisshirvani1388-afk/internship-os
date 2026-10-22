@@ -91,36 +91,63 @@
     });
   }
 
-  function _buildCalendar(rounds, planId) {
+              function _buildCalendar(rounds, planId, examDate) {
     var out = [];
     if (!R.calendar || !R.calendar.getResidencyCalendarContext) return out;
-    rounds.forEach(function (r) {
+    var maxEndDate = null;
+    var rlist = rounds || [];
+    
+    rlist.forEach(function (r) {
       if (!r || !r.startDate || !r.endDate) return;
       var ctxs = [];
       try { ctxs = R.calendar.getResidencyCalendarContext(r.startDate, r.endDate, planId); } catch (e) {}
       ctxs.forEach(function (c) {
         if (!c) return;
         out.push({
-          date: c.date,
-          roundId: r.id,
-          weekday: c.weekday,
-          dayType: c.dayType,
-          rotationContexts: c.rotationContexts,
-          activeRotationIds: c.activeRotationIds,
-          lightRotationIds: c.lightRotationIds,
-          rawCapacityMinutes: c.rawCapacityMinutes,
-          reserveMinutes: c.reserveMinutes,
-          availableCapacityMinutes: c.availableCapacityMinutes,
-          finalCapacityMinutes: c.finalCapacityMinutes,
-          feasibleCapacityMinutes: (typeof c.feasibleCapacityMinutes === "number") ? c.feasibleCapacityMinutes : null,
-          timeAvailabilityMinutes: (typeof c.timeAvailabilityMinutes === "number") ? c.timeAvailabilityMinutes : null,
-          actualAvailabilityMinutes: c.actualAvailabilityMinutes,
-          shifts: c.shifts,
-          shiftDurationMinutes: c.shiftDurationMinutes,
-          warnings: c.warnings
+          date: c.date, roundId: r.id, weekday: c.weekday, dayType: c.dayType,
+          rotationContexts: c.rotationContexts, activeRotationIds: c.activeRotationIds,
+          lightRotationIds: c.lightRotationIds, rawCapacityMinutes: c.rawCapacityMinutes,
+          reserveMinutes: c.reserveMinutes, availableCapacityMinutes: c.availableCapacityMinutes,
+          finalCapacityMinutes: c.finalCapacityMinutes, feasibleCapacityMinutes: c.feasibleCapacityMinutes,
+          timeAvailabilityMinutes: c.timeAvailabilityMinutes, actualAvailabilityMinutes: c.actualAvailabilityMinutes,
+          shifts: c.shifts, shiftDurationMinutes: c.shiftDurationMinutes, warnings: c.warnings
         });
       });
+      if (!maxEndDate || _cmpDate(r.endDate, maxEndDate) > 0) maxEndDate = r.endDate;
     });
+
+    /* [PATCH:f4b23-gap] fill gap up to examDate */
+    if (examDate && maxEndDate && _cmpDate(examDate, maxEndDate) > 0 && rlist.length > 0) {
+      var lastRound = rlist[rlist.length - 1];
+      var LIB = window.InternshipLib;
+      if (LIB && LIB.date && LIB.date.parseJalali && LIB.date.addJalaliDays && LIB.date.dateKey) {
+        var p = LIB.date.parseJalali(maxEndDate);
+        if (p) {
+          var current = LIB.date.addJalaliDays(p.jy, p.jm, p.jd, 1);
+          var currentStr = LIB.date.dateKey(current.jy, current.jm, current.jd);
+          
+          var rs = (window.__os && window.__os.getState()) ? window.__os.getState().residency : null;
+          var _userCaps = rs && rs.settings && rs.settings.defaultCapacity;
+          var _defCap = (_userCaps && typeof _userCaps.normal === "number") ? _userCaps.normal : 240;
+          
+          var safety = 0;
+          while (_cmpDate(currentStr, examDate) < 0 && safety < 366) {
+            safety++;
+            var wd = LIB.date.weekdayName ? LIB.date.weekdayName(current.jy, current.jm, current.jd) : "normal";
+            out.push({
+              date: currentStr, roundId: lastRound.id, weekday: wd, dayType: "normal",
+              finalCapacityMinutes: _defCap, shifts: [], activeRotationIds: [], warnings: []
+            });
+            current = LIB.date.addJalaliDays(current.jy, current.jm, current.jd, 1);
+            currentStr = LIB.date.dateKey(current.jy, current.jm, current.jd);
+          }
+        }
+      }
+    }
+    
+    if (out.length > 0) {
+      /* [PATCH:f5a3-log] log removed */
+    }
     return out;
   }
 
@@ -170,6 +197,9 @@
     state.tasks.forEach(function (t) {
       if (!t) return;
       if (t.sourceType === "residency_activity") return;
+      // [PATCH:skip-sleep] خواب ظرفیت مطالعه را مصرف نمی‌کند
+      if (t.areaId === "sleep") return;
+      if (t._sleepAuto) return;
       if (!t.date) return;
       if (!t.durationMinutes || t.durationMinutes <= 0) return;
       if (t.completed) return;
@@ -190,7 +220,7 @@
   }
 
   /* [PATCH:phase-28.4b] Projection-aware day occupancy for time placement */
-  function _buildDayOccupancy(state, rounds) {
+        function _buildDayOccupancy(state, rounds, examDate) {
     if (!state) return [];
     if (!R.schedulingProjection || !R.schedulingProjection.projectAll) return [];
     if (!Array.isArray(rounds) || rounds.length === 0) return [];
@@ -200,27 +230,20 @@
       if (!minDate || _cmpDate(r.startDate, minDate) < 0) minDate = r.startDate;
       if (!maxDate || _cmpDate(r.endDate, maxDate) > 0) maxDate = r.endDate;
     });
+    if (examDate && maxDate && _cmpDate(examDate, maxDate) > 0) { maxDate = examDate; }
     if (!minDate || !maxDate) return [];
     var projection;
-    /* PATCH:mvp03-range */ try { projection = R.schedulingProjection.projectAll(state, { rangeStart: minDate, rangeEnd: maxDate }); }
+    try { projection = R.schedulingProjection.projectAll(state, { rangeStart: minDate, rangeEnd: maxDate }); }
     catch (e) { return []; }
     if (!projection || !Array.isArray(projection.items)) return [];
     var out = [];
     projection.items.forEach(function (it) {
-      if (!it) return;
-      if (!it.date) return;
-      if (!it.startTime || !it.endTime) return;
-      if (_cmpDate(it.date, minDate) < 0) return;
-      if (_cmpDate(it.date, maxDate) > 0) return;
+      if (!it || !it.date || !it.startTime || !it.endTime) return;
+      if (_cmpDate(it.date, minDate) < 0 || _cmpDate(it.date, maxDate) > 0) return;
       out.push({
-        date: it.date,
-        startTime: it.startTime,
-        endTime: it.endTime,
-        role: it.role,
-        category: it.category,
-        sourceType: it.sourceType,
-        sourceId: it.sourceId,
-        title: it.title || ""
+        date: it.date, startTime: it.startTime, endTime: it.endTime,
+        role: it.role, category: it.category, sourceType: it.sourceType,
+        sourceId: it.sourceId, title: it.title || ""
       });
     });
     return out;
@@ -261,13 +284,22 @@
     var demands = R.plannerDemand.buildAll({
       enrollments: enrollments,
       books: books,
-      rounds: rounds,
+      rounds: roundsForPlanner,
       activities: activities,
       defaultPagesPerHour: defaultSpeed
     });
 
-    var calendar = _buildCalendar(rounds, planId);
-    var dayOccupancy = _buildDayOccupancy(state, rounds);
+        /* [PATCH:f4b16-gap] extend last round endDate to examDate for planner */
+    var roundsForPlanner = JSON.parse(JSON.stringify(rounds));
+    if (roundsForPlanner.length > 0 && plan.examDate) {
+      var _lastR = roundsForPlanner[roundsForPlanner.length - 1];
+      if (_cmpDate(_lastR.endDate, plan.examDate) < 0) {
+        _lastR.endDate = plan.examDate;
+      }
+    }
+    
+    var calendar = _buildCalendar(roundsForPlanner, planId, plan.examDate);
+    var dayOccupancy = _buildDayOccupancy(state, rounds, plan.examDate);
 
     var preferences = {
       studyOrderEnabled: true,
@@ -279,7 +311,10 @@
 
     var settings = {
       defaultPagesPerHour: defaultSpeed,
-      reservePolicy: (rs.settings && rs.settings.reservePolicy) || null
+      reservePolicy: (rs.settings && rs.settings.reservePolicy) || null,
+      /* [PATCH:f4b5b-caps] pass capacity settings to engine */
+      defaultCapacity: (rs.settings && rs.settings.defaultCapacity) || null,
+      reservePercent: (rs.settings && typeof rs.settings.reservePercent === "number") ? rs.settings.reservePercent : 10
     };
 
     var nonResidencyConsumers = _buildNonResidencyConsumers(state, rounds, planId);
@@ -290,7 +325,7 @@
       scopeParam: scopeParam || null,
       planId: planId,
       plan: plan,
-      rounds: rounds,
+      rounds: roundsForPlanner,
       subjects: subjects,
       books: books,
       enrollments: enrollments,

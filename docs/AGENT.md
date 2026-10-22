@@ -390,3 +390,128 @@ example.
 
 Last Completed: v0.4.2.
 Awaiting: Design Agent directive for next phase.
+
+
+## Session Update (2026-10-18 · V7 Milestones 1+2)
+
+Schema: v22 (no bump). Version: v0.5.2 (no release).
+
+### V7 study planner
+Three isolated modules under app/residency/, all passing:
+- planner-allocator-v7.js: 11/11
+- planner-input-v7.js: 19/19
+- planner-study-ui-v7.js: 10/10
+
+Registered additively. Legacy planner still active.
+V7 only via plannerStudyV7.ui.open() in F12.
+
+### Key invariants
+- No monkey-patching of legacy planner
+- No schema bump (v22)
+- No release until Milestone 6
+- input-v7 uses settings.defaultCapacity[dayType], NOT R.DEFAULT_CAPACITY
+- effectiveCapacity = min(baseCap, windowAvail), never subtract
+- dailyLifeSchedule.weeklyBlocks never create Timeline tasks
+- initialStudyBaseline activation is Milestone 3
+- Legacy R.plannerUI.open remains live route until Milestone 6
+
+### New ADRs
+ADR-060 allocator, ADR-061 usercaps, ADR-062 dailyLifeSchedule,
+ADR-063 effective capacity, ADR-064 studyHours sync,
+ADR-065 per-day apply, ADR-066 legacy planner active.
+
+### Next
+Await Design Agent for Milestone 3 (Progress Tracking).
+
+## Session Update (2026-10-19 · Agent #19)
+
+Schema: v22 (no version bump — additive fields only).
+Version: v0.5.2 (no release).
+
+Phases completed:
+  - M5  — Incremental Replan (progress detection, dedup, day lock, UI)
+  - M6  — Final Integration (route switch, round isolation, T7 strengthen)
+
+Key invariants (enforce in future patches):
+  - Dedup key = `(planId, roundId, bookId, date, pageRangeOverlap)`.
+    Never dedupe by day only — a day may contain multiple blocks.
+  - Completed activity → read (cross-round); planned → allocated (per-round).
+    `_collectActivityRanges(s, planId, bookId, roundId)` honours this.
+  - Day with any planned activity (same plan) → `cap = 0` (locked from Generate).
+  - `R.plannerUI.open(planId)` → V7; legacy at `R.plannerUI._legacyOpen`.
+    Idempotent via `_legacyOpen` guard.
+  - Round propagation: `_input.books[].roundId` → `res.blocks[].roundId` post-Generate.
+    `_resolveBlockMeta` uses `block.roundId`; `_roundIdForBook` accepts `planId`.
+  - Dev floating button hidden unless `window.__V7_DEV__ = true`.
+  - Tests: allocator 25, input 41, ui 10 = 76/76.
+
+New resolved issues: ISSUE-52, ISSUE-56, ISSUE-57, ISSUE-58,
+  ISSUE-59 (dedup), ISSUE-60 (T7), ISSUE-61 (devbtn), ISSUE-62 (meta),
+  ISSUE-63 (diag).
+New open issues: ISSUE-64 (multi-enrollment), ISSUE-65 (old activities).
+
+Frozen unchanged: round-scheduler-v22, store-*, domain-*,
+  planner-replan-apply-v7, scheduling-conflict-v20 RULES,
+  window.INTERNSHIP_STATE, schema v22, migration chain.
+
+Awaiting: Design Agent directive for M7 OR release approval.
+         Release gate BLOCKED pending approval.
+
+## PowerShell Lessons (Agent #19 · 2026-10-19)
+
+Critical: `exit` in any script closes the PowerShell window (no warning).
+The root cause of ~8 crashes this session was `exit` inside error
+handling, NOT long scripts, NOT Persian text.
+
+Solution adopted: wrap everything in `try/catch` and use `throw` for
+failure. NEVER use `exit`.
+
+    try {
+        if (cond) { throw "reason" }
+        # do work
+        Write-Host "  OK - done" -ForegroundColor Green
+    } catch {
+        Write-Host "  FAIL - $_" -ForegroundColor Red
+    }
+
+Also: no multi-line `else` in console; use two `if` statements or `throw`.
+See `POWERSHELL-GUIDE.md` for the full playbook.
+## Session Update (2026-10-22 · Agent #24)
+
+Schema: v22 (no bump). Version: v0.5.2 (no release).
+
+Phases completed:
+- R2-H / Gate 1 — Visual Polish
+- R2-H / Gate 2 — Accessibility
+- R2-I Integrated — Wizard Redesign
+
+New ADRs: 082-087.
+
+Key invariants (enforce in future patches):
+
+**Testing:**
+- `input.__tests` / `ui.__tests` MUST run isolated fixture (ADR-087)
+- NEVER live user state
+- Stable reference, not fresh-per-call
+- Verify state PRESERVED
+
+**Wizard (R2-I):**
+- `STEPS` (13) FROZEN
+- `_closing` / `_committing` = double-invoke guards
+- `R.dialog.confirm` is Promise (not callback — ISSUE-21)
+- No native `confirm()` in production path
+- Inline errors: keyword matching (ADR-086)
+- `_fa(_step + 1)` for step count
+- `aria-live` + `role="status"` for announce
+
+**R2-H:**
+- Future Days nav: inline `onclick` (WebView2 `.click()` doesn't preserve focus)
+- `_residencyFuture.{offset, selIdx}` runtime only
+- `:focus-visible` scoped (not global)
+- `prefers-reduced-motion` for wizard transitions
+- 2 Gate 2 automated tests WAIVED by owner (WebView2 artifact)
+
+Deferred: W-43, ISSUE-76, CSS cleanup, Wizard reset-all.
+
+Last Completed: R2-I Integrated Wizard Redesign.
+Awaiting: Agent #25 — Workspace or Final Regression.

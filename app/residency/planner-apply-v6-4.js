@@ -52,8 +52,55 @@
   };
 
   /* ─── Apply ─── */
-  PApp.applyPlannerProposal = function (proposal, options) {
+  /* ─── Content-based day key (regenerate-safe provenance) ─── */
+  function _dayKey(planId, a) {
+    if (!a) return "";
+    return [
+      planId || "",
+      a.roundId || "",
+      a.bookId || "",
+      a.plannedDate || ""
+    ].join("|");
+  }
+
+  function _activityAlreadyInState(s, planId, proposed) {
+    if (!s || !s.residency || !Array.isArray(s.residency.activities)) return false;
+    var key = _dayKey(planId, proposed);
+    if (!key) return false;
+    for (var i = 0; i < s.residency.activities.length; i++) {
+      var a = s.residency.activities[i];
+      if (!a) continue;
+      if (a.kind && a.kind !== "study") continue;
+      if (_dayKey(planId, a) === key) return true;
+    }
+    return false;
+  }
+
+  /* ─── Read-only: which proposed activities already exist in state? ─── */
+  PApp.checkAppliedForDay = function (proposal, date) {
+    if (!proposal || !date) return [];
+    var s = _state();
+    var list = (proposal.proposedActivities || []).filter(function (a) {
+      return a && a.plannedDate === date;
+    });
+    return list.map(function (a) {
+      return {
+        plannedDate: a.plannedDate,
+        roundId: a.roundId || null,
+        bookId: a.bookId || null,
+        plannedPageStart: a.plannedPageStart != null ? a.plannedPageStart : null,
+        plannedPageEnd: a.plannedPageEnd != null ? a.plannedPageEnd : null,
+        plannedPages: a.plannedPages != null ? a.plannedPages : null,
+        plannedDurationMinutes: a.plannedDurationMinutes != null ? a.plannedDurationMinutes : null,
+        alreadyAdded: _activityAlreadyInState(s, proposal.planId, a)
+      };
+    });
+  };
+
+  /* ─── Shared internal apply routine with optional date filter ─── */
+  function _applyInternal(proposal, options) {
     options = options || {};
+    var dateFilter = options.dateFilter || null;
     var warnings = [];
 
     // 1) Validate structure
@@ -62,46 +109,78 @@
       return { success: false, reason: "invalid_proposal", errors: errs, warnings: warnings };
     }
 
-    // 2) Check plan still exists
+    // 2) Plan exists
     var s = _state();
     if (!s || !s.residency) {
       return { success: false, reason: "no_state", errors: ["state missing"], warnings: warnings };
     }
     var plan = null;
-    (s.residency.plans || []).forEach(function (p) { if (p && p.id === proposal.planId) plan = p; });
+    (s.residency.plans || []).forEach(function (p) {
+      if (p && p.id === proposal.planId) plan = p;
+    });
     if (!plan) {
-      return { success: false, reason: "plan_not_found", errors: ["plan " + proposal.planId + " not found"], warnings: warnings };
+      return { success: false, reason: "plan_not_found",
+               errors: ["plan " + proposal.planId + " not found"], warnings: warnings };
     }
 
-    // 3) Idempotency — already applied?
-    if (PApp.isAlreadyApplied(proposal.proposalId)) {
-      return { success: false, reason: "already_applied", errors: ["proposal already applied"], warnings: warnings };
+    // 3) Index source activities (preserve original idx for stable IDs)
+    var indexed = (proposal.proposedActivities || []).map(function (a, i) {
+      return { src: a, idx: i };
+    });
+
+    // 4) Optional date filter
+    if (dateFilter) {
+      indexed = indexed.filter(function (x) { return x.src && x.src.plannedDate === dateFilter; });
+      if (indexed.length === 0) {
+        return { success: false, reason: "no_activities_for_date",
+                 date: dateFilter, warnings: warnings };
+      }
     }
 
-    // 4) Stale check
-    if (!options.force) {
+    // 5) Content-based dedup — skip if (plan,round,book,date) already in state
+    var toAdd = indexed.filter(function (x) {
+      return !_activityAlreadyInState(s, proposal.planId, x.src);
+    });
+    var skippedCount = indexed.length - toAdd.length;
+
+    // 6) Everything already exists → friendly no-op
+    if (toAdd.length === 0) {
+      return {
+        success: true, alreadyExists: true,
+        proposalId: proposal.proposalId,
+        createdActivityIds: [], createdTaskIds: [],
+        skippedActivityIds: indexed.map(function (x) {
+          return "act-" + proposal.proposalId + "-" + x.idx;
+        }),
+        warnings: warnings,
+        statistics: {
+          activitiesCreated: 0, tasksCreated: 0,
+          minutesApplied: 0, pagesApplied: 0, activitiesSkipped: skippedCount
+        }
+      };
+    }
+
+    // 7) Stale check (only for full apply, skipped for subset)
+    if (!options.force && !dateFilter) {
       var currentFp = PApp.computeCurrentFingerprint(proposal);
       if (currentFp && currentFp !== proposal.fingerprint) {
-        return { success: false, reason: "stale_proposal", errors: ["state has changed since proposal was generated"], warnings: warnings };
+        return { success: false, reason: "stale_proposal",
+                 errors: ["state has changed since proposal was generated"], warnings: warnings };
       }
-    } else {
-      warnings.push({ type: "force_apply", message: "stale check bypassed" });
     }
 
-    // 5) Pre-build all activities/tasks in memory (atomicity prep)
+    // 8) Build activities in memory
     var activitiesToAdd = [];
     var activityIds = [];
-    (proposal.proposedActivities || []).forEach(function (src, idx) {
-      var id = "act-" + proposal.proposalId + "-" + idx;
-      activityIds.push(id);
-      // validate page range invariant
+    toAdd.forEach(function (x) {
+      var src = x.src;
       var invariantOK = true;
       if (src.plannedPageStart != null && src.plannedPageEnd != null && src.plannedPages != null) {
         invariantOK = (src.plannedPageEnd - src.plannedPageStart + 1) === src.plannedPages;
       }
-      if (!invariantOK) {
-        return; // skip silently — should have been caught by validateProposal
-      }
+      if (!invariantOK) return;
+      var id = "act-" + proposal.proposalId + "-" + x.idx;
+      activityIds.push(id);
       activitiesToAdd.push({
         id: id,
         kind: src.kind || "study",
@@ -132,12 +211,27 @@
       });
     });
 
-    // 6) Commit — push activities
+    if (activitiesToAdd.length === 0) {
+      return {
+        success: true, alreadyExists: true,
+        proposalId: proposal.proposalId,
+        createdActivityIds: [], createdTaskIds: [],
+        skippedActivityIds: indexed.map(function (x) {
+          return "act-" + proposal.proposalId + "-" + x.idx;
+        }),
+        warnings: warnings,
+        statistics: {
+          activitiesCreated: 0, tasksCreated: 0,
+          minutesApplied: 0, pagesApplied: 0, activitiesSkipped: skippedCount
+        }
+      };
+    }
+
+    // 9) Commit activities
     if (!Array.isArray(s.residency.activities)) s.residency.activities = [];
-    var beforeLen = s.residency.activities.length;
     activitiesToAdd.forEach(function (a) { s.residency.activities.push(a); });
 
-    // 7) Task projection for each activity (pure function via existing API)
+    // 10) Task projection
     var createdTaskIds = [];
     if (TP && TP.syncActivityToTask) {
       activitiesToAdd.forEach(function (a) {
@@ -150,40 +244,39 @@
       });
     }
 
-    // 8) PlanVersion
-    var planVersionId = null;
-    if (DOM.store && DOM.store.addPlanVersion) {
-      var existingVersions = DOM.store.getPlanVersions() || [];
-      var maxVersion = 0;
-      var latestId = null;
-      existingVersions.forEach(function (pv) {
-        if (pv && pv.version && pv.version > maxVersion) { maxVersion = pv.version; latestId = pv.id; }
-      });
-      // Supersede existing active versions
-      existingVersions.forEach(function (pv) {
-        if (pv && pv.status === "active" && DOM.store.updatePlanVersion) {
-          DOM.store.updatePlanVersion(pv.id, { status: "superseded" });
-        }
-      });
-      var versionHash = _hash(proposal.proposalId + ":" + activityIds.slice().sort().join("|"));
-      var pv = DOM.store.addPlanVersion({
-        version: maxVersion + 1,
-        parentVersionId: latestId,
-        triggerType: "initial_plan",
-        reason: "Applied proposal " + proposal.proposalId,
-        status: "active",
-        hash: versionHash
-      });
-      if (pv) planVersionId = pv.id;
+    // 11) PlanVersion (full apply only — skipped for subset)
+    if (!dateFilter && DOM.store && DOM.store.addPlanVersion) {
+      try {
+        var existingVersions = DOM.store.getPlanVersions ? (DOM.store.getPlanVersions() || []) : [];
+        var maxVersion = 0, latestId = null;
+        existingVersions.forEach(function (pv) {
+          if (pv && pv.version && pv.version > maxVersion) { maxVersion = pv.version; latestId = pv.id; }
+        });
+        existingVersions.forEach(function (pv) {
+          if (pv && pv.status === "active" && DOM.store.updatePlanVersion) {
+            DOM.store.updatePlanVersion(pv.id, { status: "superseded" });
+          }
+        });
+        var versionHash = _hash(proposal.proposalId + ":" + activityIds.slice().sort().join("|"));
+        DOM.store.addPlanVersion({
+          version: maxVersion + 1,
+          parentVersionId: latestId,
+          triggerType: "initial_plan",
+          reason: "Applied proposal " + proposal.proposalId,
+          status: "active",
+          hash: versionHash
+        });
+      } catch (e) {
+        warnings.push({ type: "plan_version_failed", message: String(e) });
+      }
     }
 
-    // 9) Save
+    // 12) Save
     _save();
 
     return {
-      success: true,
+      success: true, alreadyExists: false,
       proposalId: proposal.proposalId,
-      planVersionId: planVersionId,
       createdActivityIds: activityIds,
       createdTaskIds: createdTaskIds,
       skippedActivityIds: [],
@@ -191,10 +284,154 @@
       statistics: {
         activitiesCreated: activitiesToAdd.length,
         tasksCreated: createdTaskIds.length,
-        minutesApplied: activitiesToAdd.reduce(function (sum, a) { return sum + (a.plannedDurationMinutes || 0); }, 0),
-        pagesApplied: activitiesToAdd.reduce(function (sum, a) { return sum + (a.plannedPages || 0); }, 0)
+        minutesApplied: activitiesToAdd.reduce(function (sum, a) {
+          return sum + (a.plannedDurationMinutes || 0);
+        }, 0),
+        pagesApplied: activitiesToAdd.reduce(function (sum, a) {
+          return sum + (a.plannedPages || 0);
+        }, 0),
+        activitiesSkipped: skippedCount
       }
     };
+  }
+
+  /* ─── Public: Full apply (bulk) — content-dedup for safety ─── */
+  PApp.applyPlannerProposal = function (proposal, options) {
+    return _applyInternal(proposal, options || {});
+  };
+
+  /* ─── Public: Per-day subset apply ─── */
+  PApp.applyProposalSubset = function (proposal, opts) {
+    opts = opts || {};
+    if (!opts.date) {
+      return { success: false, reason: "missing_date", warnings: [] };
+    }
+    return _applyInternal(proposal, {
+      dateFilter: opts.date,
+      force: opts.force === true
+    });
+  };
+
+  /* ─── Focused tests for per-day workflow (Phase 1) ─── */
+  PApp.__tests = function () {
+    var results = [];
+    function _t(id, name, pass, expected, got, reason) {
+      results.push({ id: id, name: name, passed: !!pass, expected: expected, got: got, reason: reason || null });
+    }
+    function _state() {
+      var s = window.__os && window.__os.getState ? window.__os.getState() : null;
+      return s;
+    }
+
+    var s = _state();
+    if (!s || !s.residency) {
+      return { passed: 0, total: 4, results: [
+        { id: "PD0", name: "state available", passed: false, expected: "state", got: "no state", reason: "no residency state" }
+      ]};
+    }
+
+    // Backup: snapshot activities + tasks arrays
+    var backupActivities = (s.residency.activities || []).slice();
+    var backupTasks = (s.tasks || []).slice();
+    var backupPlans = (s.residency.plans || []).slice();
+
+    try {
+      // Synthetic plan + proposal
+      var testPlanId = "__pd_test_plan__";
+      var testDate1 = "1405/8/01";
+      var testDate2 = "1405/8/02";
+
+      // Ensure test plan exists
+      var hasPlan = false;
+      for (var pi = 0; pi < (s.residency.plans || []).length; pi++) {
+        if (s.residency.plans[pi].id === testPlanId) { hasPlan = true; break; }
+      }
+      if (!hasPlan) {
+        s.residency.plans.push({ id: testPlanId, title: "PD-Test", examDate: "1405/9/01", status: "active" });
+      }
+
+      function mkAct(date, pageStart, pageEnd) {
+        return {
+          kind: "study",
+          planId: testPlanId,
+          roundId: "rnd-pd",
+          bookId: "bk-pd",
+          subjectId: "sb-pd",
+          plannedDate: date,
+          plannedStartTime: "08:00",
+          plannedDurationMinutes: 60,
+          plannedPages: (pageEnd - pageStart + 1),
+          plannedPageStart: pageStart,
+          plannedPageEnd: pageEnd
+        };
+      }
+
+      function mkProposal(activities, pId) {
+        return {
+          version: 1,
+          proposalId: pId || ("prop-pd-" + Date.now().toString(36)),
+          planId: testPlanId,
+          fingerprint: "fp-pd-test",
+          feasibility: { status: "feasible" },
+          proposedActivities: activities
+        };
+      }
+
+      function countActivitiesAt(date) {
+        var arr = s.residency.activities || [];
+        var n = 0;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i] && arr[i].planId === testPlanId && arr[i].plannedDate === date) n++;
+        }
+        return n;
+      }
+
+      // ─── T1: only selected day committed ───
+      var prop1 = mkProposal([ mkAct(testDate1, 1, 10), mkAct(testDate2, 11, 20) ]);
+      var r1 = PApp.applyProposalSubset(prop1, { date: testDate1, force: true });
+      var d1Count = countActivitiesAt(testDate1);
+      var d2Count = countActivitiesAt(testDate2);
+      var ok1 = r1.success === true && d1Count === 1 && d2Count === 0;
+      _t("PD1", "subset commits only selected day", ok1,
+         "d1=1 d2=0 success=true", "d1=" + d1Count + " d2=" + d2Count + " success=" + r1.success);
+
+      // ─── T2: idempotent (same day twice) ───
+      var r2 = PApp.applyProposalSubset(prop1, { date: testDate1, force: true });
+      var d1CountAfter = countActivitiesAt(testDate1);
+      var ok2 = d1CountAfter === 1 && (r2.alreadyExists === true || (r2.statistics && r2.statistics.activitiesCreated === 0));
+      _t("PD2", "same day applied twice → no duplicate", ok2,
+         "d1=1 alreadyExists=true", "d1=" + d1CountAfter + " alreadyExists=" + r2.alreadyExists);
+
+      // ─── T3: different date independent ───
+      var r3 = PApp.applyProposalSubset(prop1, { date: testDate2, force: true });
+      var d1Final = countActivitiesAt(testDate1);
+      var d2Final = countActivitiesAt(testDate2);
+      var ok3 = r3.success === true && d1Final === 1 && d2Final === 1;
+      _t("PD3", "date B added after A — A preserved", ok3,
+         "d1=1 d2=1", "d1=" + d1Final + " d2=" + d2Final);
+
+      // ─── T4: bulk after subset → no duplication ───
+      var r4 = PApp.applyPlannerProposal(prop1, { force: true });
+      var d1AfterBulk = countActivitiesAt(testDate1);
+      var d2AfterBulk = countActivitiesAt(testDate2);
+      var ok4 = d1AfterBulk === 1 && d2AfterBulk === 1;
+      _t("PD4", "bulk after subsets → no duplicates", ok4,
+         "d1=1 d2=1", "d1=" + d1AfterBulk + " d2=" + d2AfterBulk);
+
+    } catch (e) {
+      _t("PD-ERR", "unexpected exception", false, "no exception", String(e && e.message || e));
+    } finally {
+      // Restore state
+      s.residency.activities = backupActivities;
+      s.tasks = backupTasks;
+      s.residency.plans = backupPlans;
+      if (window.__os && window.__os.saveState) {
+        try { window.__os.saveState(); } catch (e) {}
+      }
+    }
+
+    var passed = results.filter(function (r) { return r.passed; }).length;
+    return { passed: passed, total: results.length, results: results };
   };
 
   console.log("[planner.apply.v6.4] loaded");

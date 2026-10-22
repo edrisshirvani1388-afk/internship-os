@@ -1187,7 +1187,7 @@
 
     /* PATCH:phase-F7-merge2 — merge sleep split for today card */
     let todaysTasks = state.tasks
-      .filter((task) => task.date === today)
+      .filter((task) => task.date === today && task.cancelled !== true)
       .filter((task) => !(task._sleepAuto === "night:evening"));
     todaysTasks = todaysTasks.map((task) => {
       if (task._sleepAuto === "night:morning" && state.sleep && state.sleep.schedule && state.sleep.schedule.night) {
@@ -1280,11 +1280,11 @@
     const bannerHTML = (function () {
       var todayDayN = jalaliToDayNumber(t.jy, t.jm, t.jd);
 
-      var _todayTotal = state.tasks.filter(function (x) { return x.date === today; }).length;
-      var _todayDone = state.tasks.filter(function (x) { return x.date === today && x.completed; }).length;
+      var _todayTotal = state.tasks.filter(function (x) { return x.date === today && !x.cancelled; }).length;
+      var _todayDone = state.tasks.filter(function (x) { return x.date === today && x.completed && !x.cancelled; }).length;
       var _todayPend = _todayTotal - _todayDone;
       var _overdueCount = state.tasks.filter(function (x) {
-        return !x.completed && x.date && x.date < today;
+        return !x.completed && !x.cancelled && x.date && x.date < today;
       }).length;
 
       var _calToday = 0, _calTarget = 0;
@@ -1502,7 +1502,7 @@
     for (let i = 0; i < 7; i++) {
       const d = addJalaliDays(_weekBase.jy, _weekBase.jm, _weekBase.jd, i);
       const dKey = dateKey(d.jy, d.jm, d.jd);
-      const dayTasks = state.tasks.filter((x) => x.date === dKey);
+      const dayTasks = state.tasks.filter((x) => x.date === dKey && !x.cancelled);
       const dayShifts = shiftsOnDate(d.jy, d.jm, d.jd);
       weekStrip.push({
         jy: d.jy, jm: d.jm, jd: d.jd,
@@ -1635,7 +1635,7 @@
         </div>
       </section>
       <div class="dash-2col">
-        ${todayTasksHTML}
+        ${todayTasksHTML}
 
         ${freeWindowsHTML}
       </div>
@@ -2111,7 +2111,7 @@ function _dashRenderSelectedDate(dateKeyStr) {
       if (state.tasks[i].id === sid) { t = state.tasks[i]; break; }
     }
     if (!t) return;
-    t.completed = !t.completed;
+    t.completed = !t.completed && !t.cancelled;
     t.updatedAt = Date.now();
     if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
     try {
@@ -3714,8 +3714,8 @@ function _dashWeekLabel() {
 
   function areaCardHTML(area) {
     const p = areaProgress(area.id);
-    const total = state.tasks.filter((t) => t.areaId === area.id).length;
-    const active = state.tasks.filter((t) => t.areaId === area.id && !t.completed).length;
+    const total = state.tasks.filter((t) => t.areaId === area.id && !t.cancelled).length;
+    const active = state.tasks.filter((t) => t.areaId === area.id && !t.completed && !t.cancelled).length;
     const done = total - active;
     const isEmpty = total === 0;
     const isComingSoon = (typeof COMING_SOON_AREAS !== "undefined") && (COMING_SOON_AREAS.indexOf(area.id) !== -1);
@@ -3815,7 +3815,7 @@ function _dashWeekLabel() {
     const t = state.tasks.find((x) => x.id === id);
     if (!t) return;
     const wasCompleted = t.completed;
-    t.completed = !t.completed;
+    t.completed = !t.completed && !t.cancelled;
     t.updatedAt = Date.now();
     if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
     if (t.completed) spawnNextOccurrence(t);
@@ -5413,7 +5413,7 @@ function _dayTotals(s, date) {
     try { saveState(); } catch (e) {}
     _notifyApp(res.mode === "update" ? "info" : "success", res.mode === "update" ? "برای این تاریخ رکوردی بود و به‌روزرسانی شد." : (res.mode === "edit" ? "ویرایش ذخیره شد" : "اندازه‌گیری ثبت شد"));
     renderAreaDetail("body");
-  }
+  }
   try { _healthTestBridge(); } catch (e) {}
 
 
@@ -5681,7 +5681,7 @@ function _dayTotals(s, date) {
     ];
     function _matches(t) {
       if (!t || !t.title || !t.time) return false;
-      if (t.completed) return false;
+      if (t.completed || t.cancelled === true) return false;
       if (t.areaId !== "food") return false;
       var rec = t.recurrence || "none";
       if (rec === "none") return t.date === today;
@@ -5736,7 +5736,7 @@ function _dashNotificationsList() {
     try {
       var today = todayJalali();
       var od = (state.tasks || []).filter(function (t) { /* PATCH:phase-F7-arrow2 */
-        if (!t || t.completed || !t.date || t.date >= today) return false;
+        if (!t || t.completed || t.cancelled === true || !t.date || t.date >= today) return false;
         if (t._sleepAuto) return false;
         return true;
       });
@@ -5746,7 +5746,7 @@ function _dashNotificationsList() {
         var nowD = new Date();
         var nowMin = nowD.getHours() * 60 + nowD.getMinutes();
         var wTasks = (state.tasks || []).filter(function (t) {
-          if (!t || t.completed) return false;
+          if (!t || t.completed || t.cancelled === true) return false;
           if (t.date !== today) return false;
           if (t.areaId !== "body" && t.taskType !== "exercise") return false;
           if (!t.time) return false;
@@ -6773,6 +6773,7 @@ function _updateDashBell() {
     }
     return state.tasks.filter((t) => {
       if (!t) return false;
+      if (t.cancelled === true) return false;   /* [PATCH:issue-104] */
       if (t._sleepAuto === "night:evening") return false;
       const p = parseJalali(t.date);
       return p && p.jy === jy && p.jm === jm && p.jd === jd;
@@ -6980,6 +6981,7 @@ function _updateDashBell() {
 
     state.tasks.forEach((task) => {
       if (!parseJalali(task.date)) return;
+      if (task.cancelled === true) return;   /* [PATCH:issue-104] */
       const cmpToday = compareJalaliDate(task.date, today);
       const cmp7 = compareJalaliDate(task.date, in7Key);
       if (!task.completed && cmpToday < 0) groups[0].tasks.push(task);
@@ -7007,7 +7009,7 @@ function _updateDashBell() {
     for (let i = 0; i < 7; i++) {
       const d = addJalaliDays(_weekBase.jy, _weekBase.jm, _weekBase.jd, i);
       const dKey = dateKey(d.jy, d.jm, d.jd);
-      const dayTasks = state.tasks.filter((task) => task.date === dKey);
+      const dayTasks = state.tasks.filter((task) => task.date === dKey && !task.cancelled);
       const dayShifts = shiftsOnDate(d.jy, d.jm, d.jd);
       weekDays.push({
         jy: d.jy, jm: d.jm, jd: d.jd,
@@ -7330,6 +7332,7 @@ function _updateDashBell() {
       var dayTasks = state.tasks.filter(function (t) {
         if (!t || t.date !== dateKey) return false;
         if (t._sleepAuto === "night:evening") return false;
+        if (t.cancelled === true) return false;  /* [PATCH:issue-104] */
         return true;
       }).map(function (t) {
         if (t._sleepAuto === "night:morning" && state.sleep && state.sleep.schedule && state.sleep.schedule.night) {
@@ -7763,7 +7766,7 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       }
 const now = Date.now();
       if (isEdit) {
-        const _rtWasRel = _rtIsRelevantTask({ time: task.time, durationMinutes: task.durationMinutes, sourceType: task.sourceType });
+        const _rtWasRel = _rtIsRelevantTask({ time: task.time, durationMinutes: task.durationMinutes, sourceType: task.sourceType, areaId: task.areaId, _sleepAuto: task._sleepAuto });
         const _rtBefore = {
           title: task.title, date: task.date,
           time: task.time || null,
@@ -11224,7 +11227,7 @@ ${months.map((m) => `<div class="timeline-month">${JMONTHS[m.jm - 1]}<br><span>$
     const area = areaById(areaId);
     if (!area) return "";
 
-    const allTasks = (state.tasks || []).filter((t) => t.areaId === areaId);
+    const allTasks = (state.tasks || []).filter((t) => t.areaId === areaId && !t.cancelled);
     const total = allTasks.length;
     const done = allTasks.filter((t) => t.completed).length;
     const pct = total ? Math.round((done / total) * 100) : 0;
@@ -11427,7 +11430,8 @@ ${months.map((m) => `<div class="timeline-month">${JMONTHS[m.jm - 1]}<br><span>$
         const tasks = (state.tasks || []).filter((t) =>
           t.areaId === item.areaId &&
           t.sourceType === item.sourceType &&
-          t.sourceId === item.sourceId
+          t.sourceId === item.sourceId &&
+          t.cancelled !== true
         );
         const totalTasks = tasks.length;
         const doneTasks = tasks.filter((t) => t.completed).length;
@@ -11904,6 +11908,8 @@ function _wireResidencyWelcome(view) {
 
   /* ─── Baseline editor (Phase 6) ─── */
   function openBaselineEditor(enrollmentId) {
+    var R = window.InternshipResidency; /* [PATCH:f4b9-appjs-R] */
+
     var s = state;
     var enr = (s.residency.enrollments || []).find(function (e) { return e && e.id === enrollmentId; });
     if (!enr) return;
@@ -12008,6 +12014,8 @@ function _wireResidencyWelcome(view) {
     }
 
     function updateSummary() {
+    var R = window.InternshipResidency; /* [PATCH:f4b8-appjs] */
+
       var pages = R.baseline ? R.baseline.computePages(baseline, totalPages) : 0;
       var remaining = Math.max(0, totalPages - pages);
       summaryEl.innerHTML = '📄 خوانده‌شده: <strong>' + faNum(pages) + '</strong> از ' + faNum(totalPages) +
@@ -13989,8 +13997,8 @@ function _wireResidencyWelcome(view) {
     const lifeAreas = LIFE_AREAS.map((area) => ({
       ...area,
       progress: areaProgress(area.id),
-      total: state.tasks.filter((t) => t.areaId === area.id).length,
-      done: state.tasks.filter((t) => t.areaId === area.id && t.completed).length
+      total: state.tasks.filter((t) => t.areaId === area.id && !t.cancelled).length,
+      done: state.tasks.filter((t) => t.areaId === area.id && t.completed && !t.cancelled).length
     }));
 
     const currentRot = getCurrentRotation();
@@ -14044,11 +14052,11 @@ function _wireResidencyWelcome(view) {
     const proceduresList = getProcedures();
     const proceduresTotal = proceduresList.reduce((s, c) => s + (c.items || []).length, 0);
 
-    const studyTasks = state.tasks.filter((t) => t.areaId === "study");
+    const studyTasks = state.tasks.filter((t) => t.areaId === "study" && !t.cancelled);
     const studyDone = studyTasks.filter((t) => t.completed).length;
     const studyPct = studyTasks.length ? Math.round((studyDone / studyTasks.length) * 100) : 0;
 
-    const resTasks = state.tasks.filter((t) => t.areaId === "residency");
+    const resTasks = state.tasks.filter((t) => t.areaId === "residency" && !t.cancelled);
     const resDone = resTasks.filter((t) => t.completed).length;
     const resPct = resTasks.length ? Math.round((resDone / resTasks.length) * 100) : 0;
 
@@ -15503,14 +15511,14 @@ function _wireResidencyWelcome(view) {
   }
 
   function areaProgress(areaId) {
-    const tasks = state.tasks.filter((t) => t.areaId === areaId);
+    const tasks = state.tasks.filter((t) => t.areaId === areaId && !t.cancelled);
     if (!tasks.length) return 0;
     return Math.round((tasks.filter((t) => t.completed).length / tasks.length) * 100);
   }
 
   function overallStats() {
-    const total = state.tasks.length;
-    const done = state.tasks.filter((t) => t.completed).length;
+    const total = state.tasks.filter((t) => !t.cancelled).length;
+    const done = state.tasks.filter((t) => t.completed && !t.cancelled).length;
     return { total, done, percent: total ? Math.round((done / total) * 100) : 0 };
   }
 

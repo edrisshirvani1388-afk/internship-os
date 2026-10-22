@@ -1,7 +1,13 @@
 {
-    "highlights":  "افزودن progress bar برای دانلود آپدیت (درصد + MB + مرحله)",
+    "highlights":  [
+                       "Workspace 4-section (Overview / Plan / Review \u0026 Change / Analysis)",
+                       "R3 Replan Engine",
+                       "R2-I Wizard Redesign",
+                       "R2-H Polish + Accessibility",
+                       "578/578 tests - Schema v22"
+                   ],
     "schema":  22,
-    "version":  "0.5.2",
-    "releasedAt":  "2026-10-16",
-    "notes":  "v0.5.2"
+    "version":  "0.6.0",
+    "releasedAt":  "2026-10-22",
+    "notes":  "v0.6.0"
 }

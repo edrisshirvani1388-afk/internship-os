@@ -4,7 +4,7 @@
 
 window.INTERNSHIP_DATA = {
   schemaVersion: 19,
-  appVersion: "0.5.2",
+  appVersion: "0.6.0",
   curriculumVersion: "6",
   updateUrl: "https://github.com/edrisshirvani1388-afk/internship-os/releases/latest/download/update.json",  // ← اینجا URL version.json رو بذار (بعد از setup GitHub)
 

@@ -1,9 +1,9 @@
 {
-    "publishedAt":  "2026-10-16",
-    "releaseNotes":  "افزودن progress bar برای دانلود آپدیت (درصد + MB + مرحله)",
-    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.5.2/InternshipOS-Setup-v0.5.2.exe",
-    "sha256":  "DDD91BB850E60BBD7000FC4502DADEA5F912C25B933D879A06433C89AFF8A5E2",
-    "sizeBytes":  58746896,
-    "latest":  "0.5.2",
-    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.5.2/InternshipOS-Setup-v0.5.2.exe"
+    "publishedAt":  "2026-10-22",
+    "releaseNotes":  "Workspace 4-section (Overview / Plan / Review \u0026 Change / Analysis)\nR3 Replan Engine\nR2-I Wizard Redesign\nR2-H Polish + Accessibility\n578/578 tests - Schema v22",
+    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.6.0/InternshipOS-Setup-v0.6.0.exe",
+    "sha256":  "601765D3BEC869E6A9758C742236C98A2741107DB4517EC4744FEB08AAA1A21D",
+    "sizeBytes":  58831475,
+    "latest":  "0.6.0",
+    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.6.0/InternshipOS-Setup-v0.6.0.exe"
 }

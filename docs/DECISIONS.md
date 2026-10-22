@@ -1621,3 +1621,48 @@ Formula Math.round(totalCommitted / totalCap * 100) is verified correct via 7/7 
 ### Non-reproduction
 
 Current 156 activities, no over-cap days in day view. Historical 122/244 from prior data state or Round view.
+
+## ADR-090 - Workspace 4-Section Product Shell
+
+Date: 2026-10-22 (Agent #26). Status: Accepted.
+
+### Decision
+
+Workspace presents four top-level sections: Overview / Plan / Review & Change / Analysis.
+Implementation is additive: a new layer `workspace-r2w-sections-v18.js` wraps `WS._postWire`
+and injects the section bar before the existing `.pw14-tabs`. No core workspace file is modified.
+
+### Rationale
+
+Before v0.6.0, Workspace presented five flat tabs (activities | proposal | reviews | analytics | ai)
+with no clear task-oriented entry point. The owner-approved product definition (مرکز کنترل برنامه زمانی مطالعه) requires
+a continuous workflow: understand -> identify -> review -> act -> verify.
+
+Four sections map directly to that workflow. The Overview section is action-oriented
+(not another dashboard) and provides deep-links into Plan or Review.
+
+### Contract
+
+- Section bar is `.r2w-sections-bar` with buttons `[data-r2w-section]`
+- Default section: `overview`
+- Sub-tab mapping: plan->[activities], review->[proposal,reviews], analysis->[analytics,ai]
+- Section switch persists in-memory (`_activeSection`), resets to overview on close
+- Deep-link: `[data-r2w-goto]` -> section
+- Idempotency: `data-r2w-sections`, `data-r2w-ov-wired`, `data-r2w-rendered` on relevant nodes
+- No `window.INTERNSHIP_STATE` write
+- No `R.store.*` mutation
+
+### Non-goals
+
+- No change to underlying tab renderers
+- No change to `_postWire` chain order for prior layers
+- No removal of any existing capability
+- No legacy file deletion
+
+### Impact
+
+- `app/residency/workspace-r2w-sections-v18.js` (new, ~330 lines)
+- `app/index.html` (+1 script tag after `r2w-completion`)
+- `app/styles.css` (`[PATCH:r2w-sections]`)
+
+Tests: 7 unit tests in `workspace-r2w-sections-v18.js::__tests`.

@@ -856,3 +856,44 @@ Status: Open (propose only). Severity: Low.
 - W-43 fixture reproduction
 - workspace-v13 removal
 - Final Regression + Release
+---
+
+## Session Update - 2026-10-22 - Agent #26 - v0.6.0
+
+### RESOLVED in v0.6.0
+
+**ISSUE-121** - superseded / active English in Version History
+Status: RESOLVED. PROP_LABELS now includes `superseded: جایگزین‌شده` and `active: فعال`.
+
+### CLOSED WITH DOCUMENTED LIMITATION
+
+**ISSUE-122** - Proposal real-data NOT TESTED
+Fixture-based verification: prop-head, ba-table 7 rows, 4 change chips, 3 daily rows,
+5 impact tiles, 2 cancelled rows, 5 version rows, 8 prop-sections, 3-step wrapper,
+stale marker, apply-disabled state. Zero undefined / [object leak.
+Residual: user-generated proposal (Generate on active plan) NOT tested - no state mutation allowed.
+
+**ISSUE-123** - Review tab full Persian with real data
+R.reviewQueue API verified (7 methods). Empty-state rendered with Persian labels,
+4 summary tiles, 3 action buttons, zero raw-state leak.
+Residual: due-row rendering NOT TESTED - no due reviews in current state.
+
+**ISSUE-124** - W-43 not reproducible with current data
+Fixture 7/7 PASS. Display logic verified: bar caps at 100, real number preserved,
+over-cap class + tooltip. Real overload: 0 in current data (24 cap-pct, overCapMarkers=0).
+
+### STILL OPEN (deferred)
+
+**ISSUE-125** - workspace-v13.js + .pw13-* dead code
+Status: OPEN (propose only). Deferred per Design Agent directive.
+
+**ISSUE-76** - plannerAllocation returns legacy array (6/6 counted)
+Status: OPEN (documented). Non-blocking.
+
+### Session notes
+
+- 578/578 regression PASS (NOT TESTED / waived excluded from count)
+- V7.input 44/44, V7.ui 45/45 with ADR-087 isolated fixture (plan.status == active required)
+- State integrity: SHA256 + reference identity + signature all preserved
+- Protected contracts: all intact
+- Cleanup: ~575 MB of stale backups removed; 7 state backups kept

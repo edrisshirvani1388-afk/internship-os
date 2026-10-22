@@ -213,3 +213,65 @@ Schema v22 · `round-scheduler-v22.js` · `planner-replan-apply-v7.js` · `sched
 1. Workspace Redesign (deferred, awaiting Design Agent D-01..D-07)
 2. Or Final Regression + Release readiness
 3. Release: **BLOCKED**
+---
+
+## AGENT-26 CLOSEOUT - 2026-10-22 - v0.6.0 RELEASED
+
+**Schema:** v22 (no bump). **Version:** v0.6.0 (released 2026-10-22).
+
+### Workspace Product Redesign - ACCEPTED
+
+Four sections:
+- نمای کلی (Overview): action-oriented, plan status + attention items + deep-link
+- برنامه (Plan): all activity views (day/week/month/round/timegrid) + filters
+- بازبینی و تغییر (Review & Change): Proposal + Reviews + Version History
+- تحلیل و راهنما (Analysis): AI Advisor + Analytics + Context Inspector
+
+File: `app/residency/workspace-r2w-sections-v18.js` (additive, wraps `_postWire`).
+
+### Final Regression - 578/578 verified PASS
+
+roundScheduler 47, plannerReplan 37, plannerReplanApply 16, plannerSchedule 9,
+replanTrigger 43, schedulingConflict 48, schedulingProjection 37, dayTimeline 12,
+baseline 18, availabilityEngine 18, healthTests 14, fooddbTests 12, workoutTests 32,
+sleepTests 60, feasibilityFixtures 12, migrationV22 11, plannerAllocation 6,
+workspace.sections 7, workspace.w43 7, V7.allocator 43, V7.input 44, V7.ui 45.
+
+### State Integrity - PRESERVED
+
+- `data/state.js` SHA256 unchanged before/after (323E8C...BD8C)
+- `getState()` reference identity preserved
+- Signature (196 tasks / 156 activities) before = after
+- Backup: `data/state.js.bak-final-reg-20261022-192551`
+
+### Protected Contracts - INTACT
+
+roundScheduler.computeEdit, PRA.applyReplanProposal, CF.getPolicy, SP.projectAll,
+Schema v22, window.INTERNSHIP_STATE, Store/Domain, Timeline/Constraints/Calendar.
+
+### Release Artifacts
+
+- Installer: InternshipOS-Setup-v0.6.0.exe (56.11 MB)
+- SHA256: 601765D3BEC869E6A9758C742236C98A2741107DB4517EC4744FEB08AAA1A21D
+- GitHub: v0.6.0 published (not draft, not prerelease)
+
+### Cleanup
+
+- 481 .bak files removed (58.54 MB)
+- _backups/ removed (885 files, 325.7 MB)
+- audit-26-*/ removed (2.25 MB)
+- dist-v0.4.0-* removed (188.73 MB)
+- Kept data/*.bak* (7 state backups for safety)
+
+### Known Limitations (accepted, documented)
+
+- Review due-row rendering: NOT TESTED (no due reviews in current data)
+- W-43 real overload: CLOSED WITH DOCUMENTED LIMITATION (7/7 fixture PASS)
+- ISSUE-76 plannerAllocation legacy-array: Deferred
+- ISSUE-125 workspace-v13.js dead code: Deferred (needs authorization)
+
+### Next
+
+Await Design Agent directive. No autonomous feature work.
+
+Release: v0.6.0 SHIPPED - no active release gate.

@@ -1318,3 +1318,55 @@ Observe .pw14-overlay { childList: true, subtree: true }. Debounce 150ms. Re-run
 - No state mutation
 - No R.store.* call from polish layer
 - No workspace-v13.js removal (D-01 propose only)
+---
+
+## Release v0.6.0 - 2026-10-22
+
+Status: shipped.
+
+### Four-Section Workspace Shell
+
+File: `app/residency/workspace-r2w-sections-v18.js` (additive layer).
+
+Top-level structure:
+
+    .r2w-sections-bar (4 buttons: overview | plan | review | analysis)
+      .r2w-overview-content  (custom renderer for overview)
+      .pw14-tabs             (original 5 tabs, filtered by active section)
+      .pw14-tab-content      (unchanged renderer per tab)
+
+Sub-tab mapping (frozen):
+
+    plan     -> [activities]
+    review   -> [proposal, reviews]
+    analysis -> [analytics, ai]
+
+Chain (frozen): v14-core -> v14-ext -> v14-proposal -> v15-timegrid -> v15-planversion
+  -> v15-context -> v15-move -> v17-planversion -> keyboard-v18 -> round-nav-v18
+  -> r2w-polish -> r2w-completion -> r2w-sections
+
+Each layer wraps `_postWire`, never replaces. Total 10 wraps.
+
+### Overview Renderer (new)
+
+Sources (read-only from state):
+
+- `state.residency.plans` + `meta.activePlanId` -> active plan
+- `state.residency.activities` -> overdue count
+- `state.replanTriggers` -> pending triggers
+- `WS.getCurrentProposal()` -> pending proposal
+
+Render: 3 cards (status / attention / next-action). Zero fabricated warnings.
+
+Empty state: no active plan -> meaningful explanation + start path.
+
+### Protected contracts (unchanged)
+
+Schema v22, Store/Domain signatures, roundScheduler, planner-replan-apply-v7,
+Scheduling / Allocation / Capacity / Conflict RULES, Timeline / Constraints / Calendar,
+window.INTERNSHIP_STATE read-only.
+
+### Legacy (deferred)
+
+`workspace-v13.js` + `.pw13-*` CSS remain in repo, not loaded. Removal requires
+independent authorization.

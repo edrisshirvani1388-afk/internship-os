@@ -520,3 +520,43 @@ Release: BLOCKED pending Design Agent approval.
 - MutationObserver on overlay subtree for dynamic content
 - No R.store.* mutation from polish layer
 - No window.INTERNSHIP_STATE write from polish layer
+---
+
+## RELEASED - v0.6.0 - 2026-10-22 - Agent #26
+
+**Scope closed in this release:**
+
+- R3 Replan Engine: CLOSED
+- R2-H Visual Polish / Accessibility: CLOSED WITH DOCUMENTED LIMITATIONS
+- R2-I Integrated Wizard Redesign: CLOSED WITH DOCUMENTED LIMITATIONS
+- Workspace Product Redesign: ACCEPTED
+- Final Regression / Release Readiness: ACCEPTED WITH DOCUMENTED LIMITATIONS
+
+**Final Regression:** 578/578 verified PASS.
+
+**Artifacts:** Installer 56.11 MB, SHA256 601765D3...1A21D, GitHub v0.6.0.
+
+**Acceptance criteria - all met:**
+
+1. Four sections functional (Overview / Plan / Review & Change / Analysis)
+2. Overview action-oriented with deep-link
+3. Warnings connected to action paths
+4. Activities / calendar / filters preserved
+5. Proposal + Review + Version History unified flow
+6. AI Advisor + Analytics contextual
+7. W-43 CLOSED WITH DOCUMENTED LIMITATION
+8. Contracts and real data intact
+9. Manual UI test PASS
+10. No capability removed
+
+**Post-release - no active release gate.**
+
+## NEXT PHASE - awaiting Design Agent directive
+
+Candidates (not authorized yet):
+
+- Address Review due-row NOT TESTED (fixture-only, no state mutation)
+- Address W-43 real-overload reproduction (fixture-only)
+- Legacy cleanup: workspace-v13.js + .pw13-* (needs authorization)
+- CSS mass cleanup / styles.css split (needs authorization)
+- Next product phase (awaiting Design Agent)

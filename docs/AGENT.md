@@ -515,3 +515,42 @@ Deferred: W-43, ISSUE-76, CSS cleanup, Wizard reset-all.
 
 Last Completed: R2-I Integrated Wizard Redesign.
 Awaiting: Agent #25 — Workspace or Final Regression.
+## Session Update (2026-10-22 - Agent #26) - v0.6.0 RELEASED
+
+Schema: v22 (no bump). Version: v0.6.0.
+
+### Shipped
+
+- Workspace Product Redesign - 4-section shell (Overview / Plan / Review & Change / Analysis)
+- R3 Replan Engine (already in source; first documented release)
+- R2-I Integrated Wizard Redesign
+- R2-H Visual Polish / Accessibility
+
+### Key invariants (new)
+
+- Workspace top-level shell: `.r2w-sections-bar` with `[data-r2w-section]` buttons
+- Default section: `overview`. Deep-links via `[data-r2w-goto]`
+- Section → sub-tabs mapping (frozen): plan→[activities], review→[proposal,reviews], analysis→[analytics,ai]
+- `_postWire` chain now 10 layers: v14-core -> ... -> r2w-polish -> r2w-completion -> r2w-sections
+- `PROP_LABELS` complete: superseded (جایگزین‌شده) and active (فعال) mapped
+
+### Testing invariants (reinforced)
+
+- V7.input / V7.ui require isolated fixture with `plan.status === "active"` (ADR-087)
+- Test count excludes NOT TESTED and waived from PASS total
+
+### Deferred (require separate authorization)
+
+- `workspace-v13.js` + `.pw13-*` removal
+- CSS mass cleanup / `styles.css` split
+- ISSUE-76 legacy-array test wrapper
+
+### Environment
+
+- Repo: D:\Desktop\.internship-os\internship-os
+- Release folder: D:\Desktop\.internship-os\internship-os-releases\
+- Installer: D:\Desktop\.internship-os\InternshipOS-Setup-v0.6.0.exe
+- GitHub: v0.6.0 published
+
+Last Completed: v0.6.0 release.
+Awaiting: Design Agent directive for next phase.

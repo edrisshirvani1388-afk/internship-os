@@ -26,7 +26,7 @@
     pom: null,
     historySessions: null, historyView: "list", historyEdit: null, historyError: null, historySaving: false, historyPendingDelete: null,
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
-    avatarPick: null, avatarBusy: false, avatarError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
+    avatarPick: null, avatarBusy: false, avatarError: null, sharePlanPreview: null, sharePlanBusy: false, sharePlanError: null, friendPlanData: null, friendPlanLoading: false, friendPlanError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
     historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null,
     memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
@@ -143,7 +143,7 @@
   }
   function qGetProfiles(uids) {
     if (!uids.length) return Promise.resolve([]);
-    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio,avatar_url").in("id", uids).then(function (r) { return r.data || []; });
+    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio,avatar_url,share_daily_plan").in("id", uids).then(function (r) { return r.data || []; });
   }
   function qGetTodaySessions(gid) {
     var startIso = new Date(_startOfTodayLocalMs()).toISOString();
@@ -1278,6 +1278,7 @@
       '<div class="st-members-title">آواتار</div>' +
       _avatarUploadHTML() +
       _avatarPickerHTML(avatarKey) +
+      _renderSharePlanUI() +
       '<div class="st-members-title">\u062F\u0631\u0628\u0627\u0631\u0647\u0654 \u0645\u0646</div>' +
       '<div class="st-card st-settings-card"><textarea class="st-bio-edit" data-st-bio maxlength="200" rows="3" placeholder="\u062A\u0648\u0636\u06CC\u062D \u06A9\u0648\u062A\u0627\u0647">' + esc(p.bio || "") + '</textarea></div>' +
       '<div class="st-members-title">حریم خصوصی</div>' +
@@ -1586,6 +1587,7 @@
       if (!S.memberProfileView || S.memberProfileView.user_id !== uid) return;
       S.friendDaySessions = (rows || []).filter(function (s) { return s.user_id === uid; });
       S.friendDayLoading = false;
+      _loadFriendPlan(uid, S.friendDayDate);
       render();
     }).catch(function (err) {
       S.friendDayError = String(err && err.message || err);
@@ -1664,6 +1666,285 @@
       '<div class="st-friend-day-head">' + esc(dowName) + ' \u00B7 ' + dayLabel + ' \u00B7 \u0645\u062C\u0645\u0648\u0639: ' + _fmtTimer(totalSec) + '</div>' +
       '<div class="st-friend-sessions">' + rows + '</div>' +
     '</div>';
+  }
+  function _sharePlanJalaliAddDays(jalali, n) {
+    var d = window.InternshipLib && window.InternshipLib.date;
+    if (d) {
+      if (typeof d.jalaliAddDays === "function") { try { return d.jalaliAddDays(jalali, n); } catch (e) {} }
+      if (typeof d.addDays === "function") { try { return d.addDays(jalali, n); } catch (e) {} }
+    }
+    var parts = String(jalali || "").split("/");
+    if (parts.length !== 3) return null;
+    var y = parseInt(parts[0], 10), m = parseInt(parts[1], 10), day = parseInt(parts[2], 10);
+    if (!isFinite(y) || !isFinite(m) || !isFinite(day)) return null;
+    var jmd = [31,31,31,31,31,31,30,30,30,30,30,29];
+    day += n;
+    while (day > jmd[m-1]) { day -= jmd[m-1]; m++; if (m > 12) { m = 1; y++; } }
+    while (day < 1) { m--; if (m < 1) { m = 12; y--; } day += jmd[m-1]; }
+    return y + "/" + m + "/" + day;
+  }
+  function _sharePlanCollectForDate(jalaliDate) {
+    var b = window.__ioStudyTogetherBridge;
+    if (!b || typeof b.getDailyPlan !== "function") return null;
+    var items = b.getDailyPlan(jalaliDate);
+    if (!Array.isArray(items)) return null;
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!it) continue;
+      var cat = String(it.category || "");
+      var kind = "other";
+      if (cat === "study" || cat === "residency" || cat === "review" || cat === "assessment" || cat === "clinical") kind = "study";
+      else if (cat === "sleep" || cat === "food" || cat === "exercise" || cat === "commute" || cat === "life" || cat === "body") kind = "life";
+      out.push({
+        title: String(it.title || "").slice(0, 120),
+        start: it.startTime ? String(it.startTime).slice(0, 5) : null,
+        end: it.endTime ? String(it.endTime).slice(0, 5) : null,
+        mins: (typeof it.durationMinutes === "number" && it.durationMinutes > 0) ? Math.round(it.durationMinutes) : null,
+        kind: kind
+      });
+    }
+    return out;
+  }
+  function _sharePlanCollectFor7Days() {
+    var b = window.__ioStudyTogetherBridge;
+    if (!b || typeof b.todayJalali !== "function") return null;
+    var today = b.todayJalali();
+    var todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
+    var out = [];
+    for (var i = 0; i < 8; i++) {
+      var jal = _sharePlanJalaliAddDays(today, i);
+      if (!jal) continue;
+      var items = _sharePlanCollectForDate(jal);
+      if (!items) continue;
+      var d = new Date(todayMs); d.setDate(d.getDate() + i);
+      var mm = (d.getMonth() + 1 < 10 ? "0" : "") + (d.getMonth() + 1);
+      var dd = (d.getDate() < 10 ? "0" : "") + d.getDate();
+      out.push({ date: d.getFullYear() + "-" + mm + "-" + dd, items: items });
+    }
+    return out;
+  }
+  function _sharePlanUpsert(silent) {
+    if (!S.user || !S.group || !_sb) { if (!silent) { S.sharePlanError = "\u0627\u062A\u0635\u0627\u0644 \u06CC\u0627 \u06AF\u0631\u0648\u0647 \u0646\u0627\u0645\u0648\u062C\u0648\u062F"; render(); } return; }
+    var toUpsert = _sharePlanCollectFor7Days();
+    if (!toUpsert || toUpsert.length === 0) {
+      if (!silent) { S.sharePlanBusy = false; S.sharePlanError = "\u062F\u0627\u062F\u0647\u200C\u0627\u06CC \u0628\u0631\u0627\u06CC \u0627\u0646\u062A\u0634\u0627\u0631 \u0646\u06CC\u0633\u062A"; render(); }
+      return;
+    }
+    var rows = [];
+    var nowIso = new Date().toISOString();
+    for (var i = 0; i < toUpsert.length; i++) {
+      rows.push({ user_id: S.user.id, group_id: S.group.id, plan_date: toUpsert[i].date, items: toUpsert[i].items, published_at: nowIso });
+    }
+    _sb.from("study_shared_day_plans").upsert(rows, { onConflict: "user_id,group_id,plan_date" })
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        S.sharePlanBusy = false;
+        if (!silent) { try { notify("success", "\u0628\u0631\u0646\u0627\u0645\u0647 \u0645\u0646\u062A\u0634\u0631 \u0634\u062F \u2014 " + toUpsert.length + " \u0631\u0648\u0632"); } catch (e) {} render(); }
+      })
+      .catch(function (err) {
+        S.sharePlanBusy = false;
+        S.sharePlanError = String(err && err.message || err);
+        if (window.console && console.warn) console.warn("[st] share-plan upsert failed:", S.sharePlanError);
+        if (!silent) render();
+      });
+  }
+  function _sharePlanPublish() {
+    if (!S.profile || !S.profile.share_daily_plan) { S.sharePlanError = "\u0627\u0628\u062A\u062F\u0627 \u0627\u0634\u062A\u0631\u0627\u06A9 \u0631\u0627 \u0631\u0648\u0634\u0646 \u06A9\u0646\u06CC\u062F"; render(); return; }
+    S.sharePlanBusy = true;
+    S.sharePlanError = null;
+    render();
+    _sharePlanUpsert(false);
+  }
+  function _sharePlanAutoPublish() {
+    if (!S.profile || !S.profile.share_daily_plan) return;
+    _sharePlanUpsert(true);
+  }
+  function _handleSharePlanToggle(checked) {
+    if (!S.user || !_sb) return;
+    S.sharePlanBusy = true;
+    S.sharePlanError = null;
+    render();
+    _sb.from("profiles").update({ share_daily_plan: !!checked, updated_at: new Date().toISOString() }).eq("id", S.user.id)
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        if (S.profile) S.profile.share_daily_plan = !!checked;
+        for (var i = 0; i < S.members.length; i++) {
+          if (S.members[i].user_id === S.user.id) S.members[i].share_daily_plan = !!checked;
+        }
+        S.sharePlanBusy = false;
+        try { notify("success", checked ? "\u0627\u0634\u062A\u0631\u0627\u06A9 \u0641\u0639\u0627\u0644 \u0634\u062F" : "\u0627\u0634\u062A\u0631\u0627\u06A9 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0634\u062F"); } catch (e) {}
+        render();
+      })
+      .catch(function (err) {
+        S.sharePlanBusy = false;
+        S.sharePlanError = String(err && err.message || err);
+        render();
+      });
+  }
+  function _loadFriendPlan(uid, isoDate) {
+    if (!_sb || !S.group || !uid || !isoDate) {
+      S.friendPlanLoading = false; S.friendPlanData = null; S.friendPlanError = null;
+      return Promise.resolve();
+    }
+    S.friendPlanLoading = true;
+    S.friendPlanError = null;
+    S.friendPlanData = null;
+    render();
+    return _sb.from("study_shared_day_plans")
+      .select("items,published_at,plan_date")
+      .eq("user_id", uid)
+      .eq("group_id", S.group.id)
+      .eq("plan_date", isoDate)
+      .maybeSingle()
+      .then(function (r) {
+        if (!S.memberProfileView || S.memberProfileView.user_id !== uid) return;
+        if (S.friendDayDate !== isoDate) return;
+        if (r && r.error) throw r.error;
+        S.friendPlanData = r.data || null;
+        S.friendPlanLoading = false;
+        render();
+      })
+      .catch(function (err) {
+        S.friendPlanError = String(err && err.message || err);
+        S.friendPlanLoading = false;
+        render();
+      });
+  }
+  function _timeDiffMinutes(a, b) {
+    if (!a || !b) return 0;
+    var ap = a.split(":"), bp = b.split(":");
+    var am = parseInt(ap[0], 10) * 60 + parseInt(ap[1], 10);
+    var bm = parseInt(bp[0], 10) * 60 + parseInt(bp[1], 10);
+    return bm - am;
+  }
+  function _renderFriendPlanHTML(uid) {
+    var view = S.memberProfileView;
+    if (!view) return "";
+    if (uid !== S.user.id && !view.share_daily_plan) {
+      return '<div class="st-card">' +
+        '<div class="st-members-title">\uD83D\uDCCB \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+        '<div class="st-plan-state is-share-off">' +
+          '<div class="st-plan-state-icon">\uD83D\uDD12</div>' +
+          '<div class="st-plan-state-title">\u0627\u0634\u062A\u0631\u0627\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647 \u063A\u06CC\u0631\u0641\u0639\u0627\u0644 \u0627\u0633\u062A</div>' +
+          '<div class="st-plan-state-desc">\u0627\u06CC\u0646 \u0639\u0636\u0648 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647\u0654 \u062E\u0648\u062F \u0631\u0627 \u0628\u0627 \u06AF\u0631\u0648\u0647 \u0628\u0647 \u0627\u0634\u062A\u0631\u0627\u06A9 \u0646\u0645\u06CC\u200C\u06AF\u0630\u0627\u0631\u062F.</div>' +
+        '</div>' +
+      '</div>';
+    }
+    if (S.friendPlanLoading) {
+      return '<div class="st-card"><div class="st-members-title">\uD83D\uDCCB \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+        '<div class="st-plan-state is-loading"><div class="st-plan-state-icon">\u23F3</div><div class="st-plan-state-title">\u062F\u0631 \u062D\u0627\u0644 \u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC...</div></div></div>';
+    }
+    if (S.friendPlanError) {
+      return '<div class="st-card"><div class="st-members-title">\uD83D\uDCCB \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+        '<div class="st-plan-state is-error"><div class="st-plan-state-icon">\u26A0\uFE0F</div><div class="st-plan-state-title">\u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC \u0646\u0627\u0645\u0648\u0641\u0642</div><div class="st-plan-state-desc">' + esc(S.friendPlanError) + '</div>' +
+        '<button class="st-btn-ghost st-btn-small" data-st-act="friend-plan-refresh" style="margin-top:10px;">\u062A\u0644\u0627\u0634 \u0645\u062C\u062F\u062F</button></div></div>';
+    }
+    if (!S.friendPlanData) {
+      return '<div class="st-card"><div class="st-members-title">\uD83D\uDCCB \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+        '<div class="st-plan-state"><div class="st-plan-state-icon">\uD83D\uDCED</div><div class="st-plan-state-title">\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0627\u06CC \u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u0631\u0648\u0632 \u0645\u0646\u062A\u0634\u0631 \u0646\u0634\u062F\u0647</div>' +
+        '<div class="st-plan-state-desc">\u0627\u06CC\u0646 \u0639\u0636\u0648 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0627\u06CC\u0646 \u0631\u0648\u0632 \u0631\u0627 \u0647\u0646\u0648\u0632 \u0645\u0646\u062A\u0634\u0631 \u0646\u06A9\u0631\u062F\u0647 \u06CC\u0627 \u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0627\u06CC \u0646\u062F\u0627\u0631\u062F.</div></div></div>';
+    }
+    var items = (S.friendPlanData.items || []);
+    var pubStr = S.friendPlanData.published_at ? _fmtTimeShort(S.friendPlanData.published_at) : "";
+    var meta = '<div class="st-plan-meta">' +
+      '<div class="st-plan-meta-time">' + (pubStr ? "\u0622\u062E\u0631\u06CC\u0646 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC: " + pubStr : "\u0647\u0646\u0648\u0632 \u0628\u0647\u200C\u0631\u0648\u0632 \u0646\u0634\u062F\u0647") + '</div>' +
+      '<button class="st-plan-meta-refresh" data-st-act="friend-plan-refresh">\uD83D\uDD04 \u062A\u0627\u0632\u0647\u200C\u0633\u0627\u0632\u06CC</button>' +
+    '</div>';
+    if (items.length === 0) {
+      return '<div class="st-card"><div class="st-members-title">\uD83D\uDCCB \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' + meta +
+        '<div class="st-plan-state"><div class="st-plan-state-icon">\uD83D\uDCED</div><div class="st-plan-state-title">\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0627\u06CC \u0628\u0631\u0627\u06CC \u0627\u06CC\u0646 \u0631\u0648\u0632 \u062B\u0628\u062A \u0646\u0634\u062F\u0647</div></div></div>';
+    }
+    var sorted = items.slice().sort(function (a, b) { return String(a.start || "99:99").localeCompare(String(b.start || "99:99")); });
+    var now = new Date();
+    var nowHHMM = (now.getHours() < 10 ? "0" : "") + now.getHours() + ":" + (now.getMinutes() < 10 ? "0" : "") + now.getMinutes();
+    var isToday = (S.friendDayDate === _friendDayToday());
+    var rows = "";
+    var prevEnd = null;
+    for (var i = 0; i < sorted.length; i++) {
+      var it = sorted[i];
+      var st = it.start || "";
+      var en = it.end || "";
+      if (prevEnd && st && prevEnd < st) {
+        var gap = _timeDiffMinutes(prevEnd, st);
+        if (gap >= 30) rows += '<div style="grid-column: 2; font-size:10px; opacity:0.35; padding:1px 0;">' + fa0(Math.round(gap)) + ' \u062F\u0642\u06CC\u0642\u0647 \u0641\u0627\u0635\u0644\u0647</div>';
+      }
+      var kind = it.kind || "other";
+      var kindLabel = kind === "study" ? "\u0645\u0637\u0627\u0644\u0639\u0647" : (kind === "life" ? "\u0632\u0646\u062F\u06AF\u06CC" : "\u0633\u0627\u06CC\u0631");
+      var itemClass = "is-" + kind;
+      var badge = "";
+      if (isToday && st && en) {
+        if (nowHHMM >= st && nowHHMM < en) { itemClass += " is-current"; badge = '<span class="st-plan-item-badge is-current">\u062F\u0631 \u062D\u0627\u0644 \u0627\u062C\u0631\u0627</span>'; }
+        else if (nowHHMM >= en) { itemClass += " is-past"; badge = '<span class="st-plan-item-badge is-past">\u06AF\u0630\u0634\u062A\u0647</span>'; }
+        else badge = '<span class="st-plan-item-badge is-future">\u0622\u06CC\u0646\u062F\u0647</span>';
+      } else {
+        badge = '<span class="st-plan-item-badge ' + (kind === "study" ? "is-study" : kind === "life" ? "is-life" : "") + '">' + kindLabel + '</span>';
+      }
+      var durStr = it.mins ? fa0(it.mins) + " \u062F\u0642\u06CC\u0642\u0647" : "";
+      rows += '<div class="st-plan-item">' +
+        '<div class="st-plan-item-time">' + esc(st || "\u2014") + (en ? '<span class="st-plan-item-time-end">' + esc(en) + '</span>' : '') + '</div>' +
+        '<div class="st-plan-item-dot"></div>' +
+        '<div class="st-plan-item-card ' + itemClass + '">' +
+          '<div class="st-plan-item-head"><span class="st-plan-item-title">' + esc(it.title || "(\u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646)") + '</span>' + badge + '</div>' +
+          (durStr ? '<div class="st-plan-item-meta"><span>\u23F1 ' + durStr + '</span></div>' : '') +
+        '</div>' +
+      '</div>';
+      if (en) prevEnd = en;
+    }
+    var planMinutes = 0;
+    for (var k = 0; k < sorted.length; k++) planMinutes += (sorted[k].mins || 0);
+    var actualSec = 0;
+    (S.friendDaySessions || []).forEach(function (s) {
+      if (!s.ended_at || s.end_reason === "crash") return;
+      actualSec += Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
+    });
+    var compareHTML = "";
+    if (planMinutes > 0 || actualSec > 0) {
+      compareHTML = '<div class="st-plan-compare">' +
+        '<span class="st-plan-compare-label">\u0628\u0631\u0646\u0627\u0645\u0647:</span> <span class="st-plan-compare-val">' + (planMinutes > 0 ? fa0(Math.round(planMinutes)) + " \u062F\u0642\u06CC\u0642\u0647" : "\u2014") + '</span>' +
+        '<span style="opacity:0.3;">\u00B7</span>' +
+        '<span class="st-plan-compare-label">\u0648\u0627\u0642\u0639\u06CC:</span> <span class="st-plan-compare-val">' + (actualSec > 0 ? _fmtTimer(actualSec) : "\u2014") + '</span>' +
+      '</div>';
+    }
+    return '<div class="st-card">' +
+      '<div class="st-members-title">\uD83D\uDCCB \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+      meta + compareHTML +
+      '<div class="st-plan-timeline">' + rows + '</div>' +
+    '</div>';
+  }
+  function _renderSharePlanUI() {
+    var enabled = !!(S.profile && S.profile.share_daily_plan);
+    var html = '<div class="st-members-title">\uD83D\uDCCB \u0627\u0634\u062A\u0631\u0627\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+      '<div class="st-card st-settings-card">' +
+        '<div class="st-settings-row">' +
+          '<label class="st-settings-label-wrap">' +
+            '<input type="checkbox" data-st-act="share-plan-toggle"' + (enabled ? ' checked' : '') + (S.sharePlanBusy ? ' disabled' : '') + '>' +
+            '<span class="st-settings-label">\u0627\u0634\u062A\u0631\u0627\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647 \u0628\u0627 \u062F\u0648\u0633\u062A\u0627\u0646</span>' +
+          '</label>' +
+          '<div class="st-settings-desc">\u062F\u0648\u0633\u062A\u0627\u0646 \u06AF\u0631\u0648\u0647 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u0646\u062F \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0645\u0637\u0627\u0644\u0639\u0647\u0654 \u0631\u0648\u0632\u0647\u0627\u06CC \u0634\u0645\u0627 \u0631\u0627 \u062F\u0631 \u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u0634\u0645\u0627 \u0628\u0628\u06CC\u0646\u0646\u062F. \u0641\u0642\u0637 \u0639\u0646\u0648\u0627\u0646 \u0648 \u0632\u0645\u0627\u0646 \u2014 \u0628\u062F\u0648\u0646 \u062C\u0632\u0626\u06CC\u0627\u062A \u062E\u0635\u0648\u0635\u06CC.</div>' +
+        '</div>';
+    if (S.sharePlanError) html += '<div class="st-error">' + esc(S.sharePlanError) + '</div>';
+    if (enabled) {
+      var b = window.__ioStudyTogetherBridge;
+      var tj = b && typeof b.todayJalali === "function" ? b.todayJalali() : null;
+      var todayItems = tj ? _sharePlanCollectForDate(tj) : null;
+      html += '<div class="st-plan-preview"><div class="st-plan-preview-title">\uD83D\uDCCC \u067E\u06CC\u0634\u200C\u0646\u0645\u0627\u06CC\u0634 \u0627\u0645\u0631\u0648\u0632:</div>';
+      if (!todayItems || todayItems.length === 0) html += '<div class="st-plan-preview-row" style="opacity:0.6;">\u0628\u0631\u0646\u0627\u0645\u0647\u200C\u0627\u06CC \u0628\u0631\u0627\u06CC \u0627\u0645\u0631\u0648\u0632 \u0648\u062C\u0648\u062F \u0646\u062F\u0627\u0631\u062F</div>';
+      else {
+        var shown = todayItems.slice(0, 5);
+        for (var i = 0; i < shown.length; i++) {
+          var it = shown[i];
+          var ts = (it.start || "\u2014") + (it.end ? " \u2192 " + it.end : "");
+          html += '<div class="st-plan-preview-row"><span class="st-plan-preview-time">' + esc(ts) + '</span><span>' + esc(it.title || "(\u0628\u062F\u0648\u0646 \u0639\u0646\u0648\u0627\u0646)") + '</span></div>';
+        }
+        if (todayItems.length > shown.length) html += '<div class="st-plan-preview-row" style="opacity:0.5;">+' + fa0(todayItems.length - shown.length) + ' \u0645\u0648\u0631\u062F \u062F\u06CC\u06AF\u0631</div>';
+      }
+      html += '</div><div style="display:flex;justify-content:flex-end;padding-top:8px;">' +
+        '<button class="st-btn-primary" data-st-act="share-plan-publish"' + (S.sharePlanBusy ? ' disabled' : '') + '>' + (S.sharePlanBusy ? "\u062F\u0631 \u062D\u0627\u0644 \u0627\u0646\u062A\u0634\u0627\u0631..." : "\uD83D\uDCE4 \u0627\u0646\u062A\u0634\u0627\u0631 / \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC") + '</button>' +
+      '</div>';
+    }
+    html += '</div>';
+    return html;
   }
   function _openMemberProfile(uid) {
     if (!uid) return;
@@ -1867,6 +2148,7 @@
         }
       }
       body = statsHTML +
+        _renderFriendPlanHTML(view.user_id) +
         _renderFriendDayHTML(view.user_id) +
         activityHTML +
         '<div class="st-card"><div class="st-members-title">📚 به تفکیک درس</div>' + courseHTML + '</div>' +
@@ -2151,7 +2433,7 @@
                     display_name: pr.display_name || "?", username: pr.username || "?",
                     share_timeline: !!pr.share_timeline, share_daily_total: !!pr.share_daily_total,
                     share_course_breakdown: !!pr.share_course_breakdown, share_history_with_group: !!pr.share_history_with_group,
-                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null, avatar_url: pr.avatar_url || null };
+                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null, avatar_url: pr.avatar_url || null, share_daily_plan: !!pr.share_daily_plan };
                 });
                 recomputeTodayTotal(todaySessions);
                 return qFindOwnOpenSession(S.user.id, g.id).then(function (open) {
@@ -2489,7 +2771,7 @@
     S.container.querySelectorAll("[data-st-act]").forEach(function (el) {
       if (el.tagName === "FORM") el.addEventListener("submit", onSubmit);
       else if (el.tagName === "SELECT") el.addEventListener("change", onSelect);
-    else if (el.tagName === "INPUT" && (el.getAttribute("data-st-act") === "avatar-file" || el.getAttribute("data-st-act") === "friend-day-set")) el.addEventListener("change", onSelect);
+    else if (el.tagName === "INPUT" && (el.getAttribute("data-st-act") === "avatar-file" || el.getAttribute("data-st-act") === "friend-day-set" || el.getAttribute("data-st-act") === "share-plan-toggle")) el.addEventListener("change", onSelect);
       else el.addEventListener("click", onClick);
     });
   }
@@ -2497,6 +2779,7 @@
     var t = e.target;
     if (!t || !t.getAttribute) return;
     var act = t.getAttribute("data-st-act");
+    if (act === "share-plan-toggle") { _handleSharePlanToggle(t.checked); return; }
     if (act === "avatar-file") {
       var _f = t.files && t.files[0];
       try { t.value = ""; } catch (e) {}
@@ -2608,6 +2891,8 @@
     if (act === "avatar-remove") { _avatarRemove(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
     if (act === "member-open-profile") { _openMemberProfile(t.getAttribute("data-member-id")); return; }
+    if (act === "share-plan-publish") { _sharePlanPublish(); return; }
+    if (act === "friend-plan-refresh") { if (S.memberProfileView) { S.friendPlanData = null; _loadFriendPlan(S.memberProfileView.user_id, S.friendDayDate); } return; }
     if (act === "friend-day-prev") { _friendDayShift(-1); return; }
     if (act === "friend-day-next") { _friendDayShift(1); return; }
     if (act === "friend-day-today") { if (S.memberProfileView) _friendDaySetDate(S.memberProfileView.user_id, _friendDayToday()); return; }
@@ -2810,7 +3095,7 @@
     S.readyView = "main"; S.onBreak = false; S.todaySessionCount = 0; S.lastSessionEndedAt = null;
     S.historySessions = null; S.historyView = "list"; S.historyEdit = null; S.historyError = null; S.historySaving = false; S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
-    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null;
+    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null;
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
@@ -2831,6 +3116,7 @@
         return refreshAll().then(function () { return recoverPending(); }).then(function () {
           _pomAfterOpen();
           _stSessionBooted = true;
+          setTimeout(_sharePlanAutoPublish, 500);
         });
       });
     }).catch(function (err) {
@@ -2860,7 +3146,7 @@
     S.historySaving = false;
     S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
-    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null;
+    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null;
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;

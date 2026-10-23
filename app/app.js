@@ -6208,7 +6208,47 @@ function _updateDashBell() {
     }
     document.title = "هم‌مطالعه — Internship OS";
   }
-  function _studyTogetherBridge() {
+  function _stGetDailyPlan(dateJalali) {
+  try {
+    var R = window.InternshipResidency;
+    if (!R || !R.schedulingProjection || !R.schedulingProjection.projectDate) return null;
+    var st = window.__os && typeof window.__os.getState === "function" ? window.__os.getState() : null;
+    if (!st) return null;
+    var date = dateJalali;
+    if (!date) {
+      var b = window.__ioStudyTogetherBridge;
+      date = b && typeof b.todayJalali === "function" ? b.todayJalali() : null;
+    }
+    if (!date) return null;
+    var items = R.schedulingProjection.projectDate(st, date, {});
+    if (!Array.isArray(items)) return null;
+
+    var allowedSourceTypes = { task: 1, residencyActivity: 1 };
+    var allowedRoles = { block: 1, anchor: 1, flexible: 1 };
+
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!it) continue;
+      if (!allowedSourceTypes[it.sourceType]) continue;
+      if (!allowedRoles[it.role]) continue;
+      out.push({
+        title: String(it.title || "").slice(0, 120),
+        category: String(it.category || "").slice(0, 32),
+        startTime: it.startTime ? String(it.startTime).slice(0, 5) : null,
+        endTime: it.endTime ? String(it.endTime).slice(0, 5) : null,
+        durationMinutes: (typeof it.durationMinutes === "number" && isFinite(it.durationMinutes)) ? it.durationMinutes : null,
+        sourceType: String(it.sourceType),
+        role: String(it.role)
+      });
+    }
+    return out;
+  } catch (e) {
+    if (window.console && console.warn) console.warn("[st-bridge] getDailyPlan exception:", e && e.message);
+    return null;
+  }
+}
+function _studyTogetherBridge() {
     if (window.__ioStudyTogetherBridge) return;
     window.__ioStudyTogetherBridge = {
       state: function () { return state; },
@@ -6219,7 +6259,8 @@ function _updateDashBell() {
       faNum: faNum,
       todayJalali: todayJalali,
       setRoute: setRoute,
-      getCurrentActivity: _stGetCurrentActivity
+      getCurrentActivity: _stGetCurrentActivity,
+      getDailyPlan: _stGetDailyPlan
     };
   }
   function _stGetCurrentActivity() {

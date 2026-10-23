@@ -30624,3 +30624,210 @@ html body input.r21-manage-settings-input:focus-visible {
 }
 
 /* [END PATCH:study-together-w5] */
+/* [PATCH:study-together-w6] - Shared daily plan timeline */
+
+/* ─── Share toggle in profile ─── */
+.st-page .st-share-plan-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 10px 12px; margin: 8px 0;
+  background: linear-gradient(90deg, rgba(99,102,241,0.08), rgba(139,92,246,0.03));
+  border: 1px solid rgba(99,102,241,0.28);
+  border-radius: var(--st-radius-md, 12px);
+}
+.st-page .st-share-plan-status {
+  font-size: 12px; opacity: 0.8;
+}
+
+/* ─── Preview panel ─── */
+.st-page .st-plan-preview {
+  padding: 12px 14px; margin: 8px 0 12px;
+  background: rgba(0,0,0,0.22);
+  border: 1px dashed rgba(99,102,241,0.4);
+  border-radius: var(--st-radius-md, 12px);
+}
+.st-page .st-plan-preview-title {
+  font-size: 12px; font-weight: 600; opacity: 0.85;
+  margin-bottom: 8px; color: rgba(99,102,241,0.95);
+}
+.st-page .st-plan-preview-row {
+  display: flex; gap: 8px; align-items: center;
+  padding: 4px 0; font-size: 12px;
+}
+.st-page .st-plan-preview-time {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75; min-width: 90px;
+}
+
+/* ─── Plan meta (last published) ─── */
+.st-page .st-plan-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap; padding: 6px 0 10px;
+}
+.st-page .st-plan-meta-time {
+  font-size: 11px; opacity: 0.6;
+}
+.st-page .st-plan-meta-refresh {
+  font-size: 11px; padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--st-border-mid, rgba(255,255,255,0.10));
+  border-radius: 6px;
+  color: inherit; cursor: pointer; font-family: inherit;
+  transition: background 150ms, border-color 150ms;
+}
+.st-page .st-plan-meta-refresh:hover { background: rgba(255,255,255,0.05); border-color: var(--st-border-hi, rgba(255,255,255,0.16)); }
+
+/* ─── Empty states (4 differentiated) ─── */
+.st-page .st-plan-state {
+  padding: 28px 18px; text-align: center;
+  border-radius: var(--st-radius-md, 12px);
+  border: 1px dashed var(--st-border-soft, rgba(255,255,255,0.06));
+  margin: 8px 0;
+}
+.st-page .st-plan-state-icon {
+  font-size: 28px; line-height: 1; margin-bottom: 8px; opacity: 0.7;
+}
+.st-page .st-plan-state-title {
+  font-size: 13px; font-weight: 600; margin-bottom: 4px;
+}
+.st-page .st-plan-state-desc {
+  font-size: 12px; opacity: 0.65; line-height: 1.6;
+}
+.st-page .st-plan-state.is-share-off { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.04); }
+.st-page .st-plan-state.is-error { border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.05); }
+.st-page .st-plan-state.is-loading { opacity: 0.7; }
+
+/* ─── Vertical timeline ─── */
+.st-page .st-plan-timeline {
+  display: flex; flex-direction: column;
+  position: relative;
+  padding: 6px 0;
+}
+.st-page .st-plan-timeline::before {
+  content: ""; position: absolute;
+  inset-inline-start: 68px; top: 0; bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.12) 10%, rgba(255,255,255,0.12) 90%, transparent);
+}
+
+.st-page .st-plan-item {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 12px;
+  padding: 6px 0;
+  position: relative;
+  animation: stW6FadeIn 220ms ease-out both;
+}
+@keyframes stW6FadeIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.st-page .st-plan-item-time {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  padding-top: 8px;
+  opacity: 0.75;
+  line-height: 1.2;
+}
+.st-page .st-plan-item-time-end {
+  display: block;
+  opacity: 0.6;
+  font-size: 10px;
+}
+
+.st-page .st-plan-item-dot {
+  position: absolute;
+  inset-inline-start: 63px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.5);
+  background: rgba(99,102,241,1);
+  z-index: 1;
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.35);
+}
+
+.st-page .st-plan-item-card {
+  padding: 8px 12px;
+  border-radius: var(--st-radius-md, 12px);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+  border: 1px solid var(--st-border-soft, rgba(255,255,255,0.06));
+  border-inline-start: 3px solid rgba(99,102,241,0.6);
+  transition: background 180ms, border-color 180ms;
+}
+.st-page .st-plan-item-card.is-study {
+  border-inline-start-color: rgba(52,211,153,0.85);
+}
+.st-page .st-plan-item-card.is-life {
+  border-inline-start-color: rgba(245,158,11,0.85);
+}
+.st-page .st-plan-item-card.is-other {
+  border-inline-start-color: rgba(148,163,184,0.7);
+}
+.st-page .st-plan-item-card.is-past {
+  opacity: 0.55;
+}
+.st-page .st-plan-item-card.is-current {
+  border-color: rgba(52,211,153,0.55);
+  background: radial-gradient(120% 100% at 0% 0%, rgba(52,211,153,0.10), transparent 60%),
+              linear-gradient(180deg, rgba(52,211,153,0.06), rgba(52,211,153,0.02));
+  box-shadow: 0 4px 16px rgba(52,211,153,0.15);
+}
+.st-page .st-plan-item-card.is-current .st-plan-item-dot { background: rgba(52,211,153,1); box-shadow: 0 0 0 3px rgba(52,211,153,0.25), 0 0 12px rgba(52,211,153,0.6); }
+
+.st-page .st-plan-item-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.st-page .st-plan-item-title {
+  font-size: 13px; font-weight: 600;
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.st-page .st-plan-item-badge {
+  font-size: 10px; padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.st-page .st-plan-item-badge.is-study { background: rgba(52,211,153,0.16); color: rgba(52,211,153,0.95); }
+.st-page .st-plan-item-badge.is-life { background: rgba(245,158,11,0.16); color: rgba(245,158,11,0.95); }
+.st-page .st-plan-item-badge.is-current { background: rgba(52,211,153,0.28); color: rgba(52,211,153,1); }
+.st-page .st-plan-item-badge.is-past { background: rgba(148,163,184,0.18); color: rgba(148,163,184,0.85); }
+.st-page .st-plan-item-badge.is-future { background: rgba(99,102,241,0.18); color: rgba(99,102,241,0.95); }
+
+.st-page .st-plan-item-meta {
+  display: flex; gap: 10px; font-size: 11px; opacity: 0.72;
+  flex-wrap: wrap;
+}
+
+/* ─── Comparison badge (plan vs actual) ─── */
+.st-page .st-plan-compare {
+  display: flex; gap: 8px; align-items: center;
+  padding: 10px 14px; margin: 4px 0 12px;
+  background: linear-gradient(90deg, rgba(99,102,241,0.10), rgba(139,92,246,0.03));
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: var(--st-radius-md, 12px);
+  font-size: 12px;
+}
+.st-page .st-plan-compare-label { opacity: 0.75; }
+.st-page .st-plan-compare-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-page .st-plan-item { animation: none !important; }
+  .st-page .st-plan-meta-refresh,
+  .st-page .st-plan-item-card { transition: none !important; }
+}
+
+@media (max-width: 600px) {
+  .st-page .st-plan-timeline::before { inset-inline-start: 56px; }
+  .st-page .st-plan-item { grid-template-columns: 50px 1fr; gap: 10px; }
+  .st-page .st-plan-item-dot { inset-inline-start: 51px; }
+  .st-page .st-plan-item-time { font-size: 10px; }
+  .st-page .st-plan-item-title { font-size: 12px; }
+}
+
+/* [END PATCH:study-together-w6] */

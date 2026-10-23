@@ -30477,3 +30477,150 @@ html body input.r21-manage-settings-input:focus-visible {
 }
 
 /* [END PATCH:study-together-w4b] */
+/* [PATCH:study-together-w5] - Avatar images + friend day view */
+
+/* ─── Avatar (img fallback over gradient) ─── */
+.st-page .st-profile-avatar,
+.st-page .st-m-avatar,
+.st-page .st-lb-avatar,
+.st-page .st-avatar-option {
+  overflow: hidden;
+  position: relative;
+}
+.st-page .st-avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ─── Avatar upload ─── */
+.st-page .st-avatar-upload-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 8px 0 4px;
+  background: var(--st-ds-bg-1, rgba(255,255,255,0.04));
+  border: 1px solid var(--st-ds-border, rgba(255,255,255,0.08));
+  border-radius: var(--st-radius-md, 12px);
+}
+.st-page .st-avatar-photo-preview {
+  width: 48px; height: 48px; border-radius: 50%;
+  overflow: hidden; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.st-page .st-avatar-photo-preview img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.st-page .st-avatar-upload-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: linear-gradient(180deg, rgba(99,102,241,0.20), rgba(99,102,241,0.10));
+  border: 1px dashed rgba(99,102,241,0.5);
+  border-radius: 8px;
+  color: inherit; font-family: inherit; font-size: 13px;
+  cursor: pointer;
+  transition: background 180ms, border-color 180ms;
+}
+.st-page .st-avatar-upload-btn:hover { background: linear-gradient(180deg, rgba(99,102,241,0.32), rgba(99,102,241,0.16)); border-color: rgba(99,102,241,0.7); }
+.st-page .st-avatar-upload-btn.is-busy { opacity: 0.6; pointer-events: none; }
+.st-page .st-avatar-busy { font-size: 12px; opacity: 0.75; }
+
+/* ─── Friend day view ─── */
+.st-page .st-friend-day-nav {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 0 12px;
+}
+.st-page .st-friend-day-date {
+  padding: 7px 10px;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid var(--st-border-mid, rgba(255,255,255,0.10));
+  border-radius: var(--st-radius-sm, 8px);
+  color: inherit; font-family: inherit; font-size: 13px;
+  color-scheme: dark;
+}
+.st-page .st-friend-day-date:focus { border-color: rgba(99,102,241,0.55); box-shadow: 0 0 0 3px rgba(99,102,241,0.18); outline: none; }
+
+.st-page .st-friend-day-head {
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgba(99,102,241,0.10), rgba(139,92,246,0.04));
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: var(--st-radius-md, 12px);
+  font-size: 13px; font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.st-page .st-friend-sessions { display: flex; flex-direction: column; gap: 6px; }
+.st-page .st-friend-session {
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--st-border-soft, rgba(255,255,255,0.06));
+  border-radius: var(--st-radius-md, 12px);
+  transition: background 160ms, border-color 160ms;
+}
+.st-page .st-friend-session:hover { background: rgba(255,255,255,0.06); border-color: var(--st-border-mid, rgba(255,255,255,0.10)); }
+.st-page .st-friend-session-main {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  font-size: 13px;
+}
+.st-page .st-friend-session-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: rgba(99,102,241,0.95);
+}
+.st-page .st-friend-session-dur {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+.st-page .st-friend-session-course {
+  margin-inline-start: auto;
+  font-size: 12px;
+  opacity: 0.9;
+}
+.st-page .st-friend-day-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.6;
+  background: radial-gradient(120% 100% at 50% 0%, rgba(99,102,241,0.05), transparent 60%);
+  border: 1px dashed var(--st-border-soft, rgba(255,255,255,0.06));
+  border-radius: var(--st-radius-md, 12px);
+}
+
+/* ─── Now card ─── */
+.st-page .st-now-card {
+  padding: 14px 16px;
+  background: radial-gradient(120% 100% at 0% 0%, rgba(52,211,153,0.18), transparent 60%),
+              linear-gradient(180deg, rgba(52,211,153,0.06), rgba(52,211,153,0.02));
+  border: 1px solid rgba(52,211,153,0.45);
+  border-radius: var(--st-radius-lg, 18px);
+  box-shadow: 0 6px 22px rgba(52,211,153,0.15);
+  margin-bottom: 12px;
+}
+.st-page .st-now-label {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: rgba(52,211,153,0.95);
+  margin-bottom: 6px;
+}
+.st-page .st-now-title {
+  font-size: 15px; font-weight: 600;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-page .st-friend-session,
+  .st-page .st-avatar-upload-btn { transition: none !important; }
+}
+
+@media (max-width: 600px) {
+  .st-page .st-friend-session-course { margin-inline-start: 0; width: 100%; }
+  .st-page .st-avatar-upload-wrap { padding: 8px 10px; }
+}
+
+/* [END PATCH:study-together-w5] */

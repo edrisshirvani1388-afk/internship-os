@@ -26,7 +26,7 @@
     pom: null,
     historySessions: null, historyView: "list", historyEdit: null, historyError: null, historySaving: false, historyPendingDelete: null,
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
-    avatarPick: null,
+    avatarPick: null, avatarBusy: false, avatarError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
     historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null,
     memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
@@ -143,7 +143,7 @@
   }
   function qGetProfiles(uids) {
     if (!uids.length) return Promise.resolve([]);
-    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio").in("id", uids).then(function (r) { return r.data || []; });
+    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio,avatar_url").in("id", uids).then(function (r) { return r.data || []; });
   }
   function qGetTodaySessions(gid) {
     var startIso = new Date(_startOfTodayLocalMs()).toISOString();
@@ -636,6 +636,104 @@
       if (statusEl) statusEl.textContent = "خطا: " + String(err && err.message || err);
       try { notify("error", "ذخیره ناموفق"); } catch (e) {}
     });
+  }
+  function _avatarInnerHTML(member) {
+    var url = member && member.avatar_url;
+    if (url) return '<img class="st-avatar-img" src="' + esc(url) + '" alt="" loading="lazy">';
+    return esc(((member && member.display_name) || "?").charAt(0));
+  }
+  function _avatarExtFromMime(mime) {
+    if (mime === "image/png") return "png";
+    if (mime === "image/webp") return "webp";
+    if (mime === "image/jpeg") return "jpg";
+    return null;
+  }
+  function _avatarValidateFile(file) {
+    if (!file) return "\u0641\u0627\u06CC\u0644\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u0646\u0634\u062F\u0647";
+    if (file.size > 2 * 1024 * 1024) return "\u062D\u062C\u0645 \u0641\u0627\u06CC\u0644 \u0628\u06CC\u0634 \u0627\u0632 \u06F2 \u0645\u06AF\u0627\u0628\u0627\u06CC\u062A";
+    if (!_avatarExtFromMime(file.type)) return "\u0641\u0631\u0645\u062A \u0645\u062C\u0627\u0632: JPG\u060C PNG\u060C WEBP";
+    return null;
+  }
+  function _avatarPathFromUrl(url) {
+    var m = /\/avatars\/([^?]+)/.exec(url || "");
+    return m ? m[1] : null;
+  }
+  function _avatarUpload(file) {
+    var err = _avatarValidateFile(file);
+    if (err) { S.avatarError = err; render(); return; }
+    S.avatarBusy = true;
+    S.avatarError = null;
+    render();
+    var ext = _avatarExtFromMime(file.type);
+    var path = S.user.id + "/" + _uuid() + "." + ext;
+    _sb.storage.from("avatars").upload(path, file, { contentType: file.type, upsert: false, cacheControl: "3600" }).then(function (r) {
+      if (r && r.error) throw r.error;
+      var pub = _sb.storage.from("avatars").getPublicUrl(path);
+      var url = pub && pub.data && pub.data.publicUrl;
+      if (!url) throw new Error("public_url_failed");
+      var oldUrl = S.profile && S.profile.avatar_url;
+      return _sb.from("profiles").update({ avatar_url: url, updated_at: new Date().toISOString() }).eq("id", S.user.id).then(function (u) {
+        if (u && u.error) throw u.error;
+        S.profile.avatar_url = url;
+        for (var _mi = 0; _mi < S.members.length; _mi++) {
+          if (S.members[_mi].user_id === S.user.id) S.members[_mi].avatar_url = url;
+        }
+        if (oldUrl) {
+          try {
+            var op = _avatarPathFromUrl(oldUrl);
+            if (op) _sb.storage.from("avatars").remove([op]);
+          } catch (e) {}
+        }
+        S.avatarBusy = false;
+        try { notify("success", "\u0622\u0648\u0627\u062A\u0627\u0631 \u0628\u0647\u200C\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06CC \u0634\u062F"); } catch (e) {}
+        render();
+      });
+    }).catch(function (e) {
+      S.avatarBusy = false;
+      S.avatarError = String(e && e.message || e);
+      render();
+    });
+  }
+  function _avatarRemove() {
+    if (!S.profile || !S.profile.avatar_url) return;
+    S.avatarBusy = true;
+    S.avatarError = null;
+    render();
+    var oldPath = _avatarPathFromUrl(S.profile.avatar_url);
+    var delP = oldPath ? _sb.storage.from("avatars").remove([oldPath]) : Promise.resolve();
+    delP.then(function () {
+      return _sb.from("profiles").update({ avatar_url: null, updated_at: new Date().toISOString() }).eq("id", S.user.id);
+    }).then(function (r) {
+      if (r && r.error) throw r.error;
+      S.profile.avatar_url = null;
+      for (var _mj = 0; _mj < S.members.length; _mj++) {
+        if (S.members[_mj].user_id === S.user.id) S.members[_mj].avatar_url = null;
+      }
+      S.avatarBusy = false;
+      try { notify("success", "\u0622\u0648\u0627\u062A\u0627\u0631 \u062D\u0630\u0641 \u0634\u062F"); } catch (e) {}
+      render();
+    }).catch(function (e) {
+      S.avatarBusy = false;
+      S.avatarError = String(e && e.message || e);
+      render();
+    });
+  }
+  function _avatarUploadHTML() {
+    var hasPhoto = !!(S.profile && S.profile.avatar_url);
+    var html = '<div class="st-avatar-upload-wrap">';
+    if (hasPhoto) {
+      html += '<div class="st-avatar-photo-preview"><img src="' + esc(S.profile.avatar_url) + '" alt=""></div>';
+      html += '<button type="button" class="st-btn-danger st-btn-small" data-st-act="avatar-remove"' + (S.avatarBusy ? ' disabled' : '') + '>\uD83D\uDDD1\uFE0F \u062D\u0630\u0641 \u0639\u06A9\u0633</button>';
+    } else {
+      html += '<label class="st-avatar-upload-btn' + (S.avatarBusy ? ' is-busy' : '') + '">' +
+        '<input type="file" data-st-act="avatar-file" accept="image/jpeg,image/png,image/webp" style="display:none">' +
+        '<span>\uD83D\uDCF7 \u0622\u067E\u0644\u0648\u062F \u0639\u06A9\u0633 \u0634\u062E\u0635\u06CC</span>' +
+      '</label>';
+    }
+    if (S.avatarBusy) html += '<span class="st-avatar-busy">\u062F\u0631 \u062D\u0627\u0644 \u0622\u067E\u0644\u0648\u062F...</span>';
+    if (S.avatarError) html += '<div class="st-error">' + esc(S.avatarError) + '</div>';
+    html += '</div>';
+    return html;
   }
   function _avatarPickerHTML(currentKey) {
     var keys = ["av-1","av-2","av-3","av-4","av-5","av-6","av-7","av-8"];
@@ -1166,7 +1264,7 @@
         '<button class="st-btn-ghost st-btn-small" data-st-act="logout" title="خروج">🚪 خروج</button>' +
       '</div>' +
       '<div class="st-profile-hero">' +
-        '<div class="st-profile-avatar st-avatar-' + esc(avatarKey) + '">' + esc(initial) + '</div>' +
+        '<div class="st-profile-avatar st-avatar-' + esc(avatarKey) + '">' + _avatarInnerHTML(p) + '</div>' +
         '<div class="st-profile-info">' +
           '<div class="st-profile-name">' + esc(p.display_name) + '</div>' +
           '<div class="st-profile-username">@' + esc(p.username) + '</div>' +
@@ -1178,6 +1276,7 @@
         '<div class="st-stat"><span class="st-stat-ico">📚</span><div><div class="st-stat-val">' + fa0((S.courses||[]).length) + '</div><div class="st-stat-lbl">درس</div></div></div>' +
       '</div>' +
       '<div class="st-members-title">آواتار</div>' +
+      _avatarUploadHTML() +
       _avatarPickerHTML(avatarKey) +
       '<div class="st-members-title">\u062F\u0631\u0628\u0627\u0631\u0647\u0654 \u0645\u0646</div>' +
       '<div class="st-card st-settings-card"><textarea class="st-bio-edit" data-st-bio maxlength="200" rows="3" placeholder="\u062A\u0648\u0636\u06CC\u062D \u06A9\u0648\u062A\u0627\u0647">' + esc(p.bio || "") + '</textarea></div>' +
@@ -1463,6 +1562,109 @@
       '</div>' +
     '</div>';
   }
+  function _friendDayToday() {
+    var d = new Date();
+    function p2(n){ return n < 10 ? "0" + n : "" + n; }
+    return d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
+  }
+  function _friendDaySetDate(uid, isoDate) {
+    if (!isoDate) return;
+    S.friendDayDate = isoDate;
+    S.friendDaySessions = null;
+    S.friendDayLoading = true;
+    S.friendDayError = null;
+    render();
+    _friendDayReload(uid);
+  }
+  function _friendDayReload(uid) {
+    if (!S.user || !S.group || !_sb || !S.friendDayDate) { S.friendDayLoading = false; render(); return; }
+    var d = new Date(S.friendDayDate + "T00:00:00");
+    var startIso = d.toISOString();
+    var end = new Date(d.getTime()); end.setDate(end.getDate() + 1);
+    var endIso = end.toISOString();
+    qGetGroupRangeSessions(S.group.id, startIso, endIso).then(function (rows) {
+      if (!S.memberProfileView || S.memberProfileView.user_id !== uid) return;
+      S.friendDaySessions = (rows || []).filter(function (s) { return s.user_id === uid; });
+      S.friendDayLoading = false;
+      render();
+    }).catch(function (err) {
+      S.friendDayError = String(err && err.message || err);
+      S.friendDayLoading = false;
+      render();
+    });
+  }
+  function _friendDayShift(delta) {
+    if (!S.memberProfileView || !S.friendDayDate) return;
+    var d = new Date(S.friendDayDate + "T00:00:00");
+    d.setDate(d.getDate() + delta);
+    var now = new Date(); now.setHours(0,0,0,0);
+    if (d.getTime() > now.getTime()) return;
+    function p2(n){ return n < 10 ? "0" + n : "" + n; }
+    var iso = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
+    _friendDaySetDate(S.memberProfileView.user_id, iso);
+  }
+  function _renderFriendDayHTML(uid) {
+    var view = S.memberProfileView;
+    if (!view) return "";
+    if (!view.share_daily_total && uid !== S.user.id) {
+      return '<div class="st-card"><div class="st-members-title">\uD83D\uDCC5 \u0641\u0639\u0627\u0644\u06CC\u062A \u0631\u0648\u0632\u0627\u0646\u0647</div><div class="st-muted-note">\uD83D\uDD12 \u062A\u0627\u0631\u06CC\u062E\u0686\u0647 \u0631\u0648\u0632\u0627\u0646\u0647 \u0628\u0647 \u0627\u0634\u062A\u0631\u0627\u06A9 \u06AF\u0630\u0627\u0634\u062A\u0647 \u0646\u0634\u062F\u0647</div></div>';
+    }
+    if (!S.friendDayDate) S.friendDayDate = _friendDayToday();
+    var d = new Date(S.friendDayDate + "T00:00:00");
+    var now = new Date(); now.setHours(0,0,0,0);
+    var atToday = d.getTime() >= now.getTime();
+    var dowNames = ["\u06CC\u06A9\u0634\u0646\u0628\u0647","\u062F\u0648\u0634\u0646\u0628\u0647","\u0633\u0647\u200C\u0634\u0646\u0628\u0647","\u0686\u0647\u0627\u0631\u0634\u0646\u0628\u0647","\u067E\u0646\u062C\u200C\u0634\u0646\u0628\u0647","\u062C\u0645\u0639\u0647","\u0634\u0646\u0628\u0647"];
+    var dowName = dowNames[d.getDay()];
+    function p2(n){ return n < 10 ? "0" + n : "" + n; }
+    var dayLabel = _toPersianDigits(d.getFullYear()) + "/" + _toPersianDigits(p2(d.getMonth() + 1)) + "/" + _toPersianDigits(p2(d.getDate()));
+    var nav = '<div class="st-friend-day-nav">' +
+      '<button class="st-btn-ghost st-btn-small" data-st-act="friend-day-prev" title="\u0631\u0648\u0632 \u0642\u0628\u0644">\u2039</button>' +
+      '<input type="date" data-st-act="friend-day-set" class="st-friend-day-date" value="' + esc(S.friendDayDate) + '" max="' + esc(_friendDayToday()) + '">' +
+      '<button class="st-btn-ghost st-btn-small" data-st-act="friend-day-next"' + (atToday ? ' disabled' : '') + ' title="\u0631\u0648\u0632 \u0628\u0639\u062F">\u203A</button>' +
+      '<button class="st-btn-ghost st-btn-small" data-st-act="friend-day-today"' + (atToday ? ' disabled' : '') + '>\u0627\u0645\u0631\u0648\u0632</button>' +
+    '</div>';
+    if (S.friendDayLoading) return '<div class="st-card"><div class="st-members-title">\uD83D\uDCC5 \u0641\u0639\u0627\u0644\u06CC\u062A \u0631\u0648\u0632\u0627\u0646\u0647</div>' + nav + '<div class="st-loading">\u062F\u0631 \u062D\u0627\u0644 \u0628\u0627\u0631\u06AF\u0630\u0627\u0631\u06CC...</div></div>';
+    if (S.friendDayError) return '<div class="st-card"><div class="st-members-title">\uD83D\uDCC5 \u0641\u0639\u0627\u0644\u06CC\u062A \u0631\u0648\u0632\u0627\u0646\u0647</div>' + nav + '<div class="st-error">' + esc(S.friendDayError) + '</div></div>';
+    var sess = S.friendDaySessions || [];
+    var totalSec = 0;
+    sess.forEach(function (s) {
+      if (!s.ended_at || s.end_reason === "crash") return;
+      totalSec += Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
+    });
+    var rows;
+    if (sess.length === 0) {
+      rows = '<div class="st-friend-day-empty">\u062F\u0631 \u0627\u06CC\u0646 \u0631\u0648\u0632 \u062C\u0644\u0633\u0647\u200C\u0627\u06CC \u062B\u0628\u062A \u0646\u0634\u062F\u0647</div>';
+    } else {
+      var sorted = sess.slice().sort(function (a, b) { return new Date(a.started_at) - new Date(b.started_at); });
+      rows = sorted.map(function (s) {
+        var st = new Date(s.started_at);
+        var durSec = 0;
+        if (s.ended_at && s.end_reason !== "crash") durSec = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st.getTime()) / 1000));
+        var c = _courseById(s.course_id || null);
+        var courseLabel = c ? '<span class="st-course-stat-label ' + _courseColorClass(c) + '"><span class="st-course-dot"></span>' + esc(c.name) + '</span>' : '<span class="st-muted">\u0628\u062F\u0648\u0646 \u062F\u0631\u0633</span>';
+        var timeStr = _fmtTimeShort(s.started_at) + " \u2192 " + (s.ended_at ? _fmtTimeShort(s.ended_at) : "\u0628\u0627\u0632");
+        var badge;
+        if (s.end_reason === "crash") badge = '<span class="st-hist-badge st-hist-badge-crash">\u0642\u0637\u0639\u200C\u0634\u062F\u0647</span>';
+        else if (s.end_reason === "break") badge = '<span class="st-hist-badge st-hist-badge-break">\u0627\u0633\u062A\u0631\u0627\u062D\u062A</span>';
+        else if (s.end_reason === "ended") badge = '<span class="st-hist-badge st-hist-badge-ended">\u067E\u0627\u06CC\u0627\u0646</span>';
+        else badge = '<span class="st-hist-badge st-hist-badge-open">\u0628\u0627\u0632</span>';
+        return '<div class="st-friend-session">' +
+          '<div class="st-friend-session-main">' +
+            '<span class="st-friend-session-time">' + timeStr + '</span>' +
+            '<span class="st-friend-session-dur">' + (durSec > 0 ? _fmtTimer(durSec) : '\u2014') + '</span>' +
+            badge +
+            '<span class="st-friend-session-course">' + courseLabel + '</span>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+    }
+    return '<div class="st-card">' +
+      '<div class="st-members-title">\uD83D\uDCC5 \u0641\u0639\u0627\u0644\u06CC\u062A \u0631\u0648\u0632\u0627\u0646\u0647</div>' +
+      nav +
+      '<div class="st-friend-day-head">' + esc(dowName) + ' \u00B7 ' + dayLabel + ' \u00B7 \u0645\u062C\u0645\u0648\u0639: ' + _fmtTimer(totalSec) + '</div>' +
+      '<div class="st-friend-sessions">' + rows + '</div>' +
+    '</div>';
+  }
   function _openMemberProfile(uid) {
     if (!uid) return;
     var member = null;
@@ -1471,8 +1673,13 @@
     S.memberProfileView = member;
     S.memberProfileData = null;
     S.memberProfileError = null;
+    S.friendDayDate = _friendDayToday();
+    S.friendDaySessions = null;
+    S.friendDayLoading = false;
+    S.friendDayError = null;
     render();
     _loadMemberProfile(uid);
+    _friendDayReload(uid);
   }
   function _closeMemberProfile() {
     if (!S.memberProfileView) return;
@@ -1480,6 +1687,10 @@
     S.memberProfileData = null;
     S.memberProfileError = null;
     S.memberProfileLoading = false;
+    S.friendDayDate = null;
+    S.friendDaySessions = null;
+    S.friendDayLoading = false;
+    S.friendDayError = null;
     render();
   }
   function _loadMemberProfile(uid) {
@@ -1594,7 +1805,7 @@
           var label = m.display_name + (m.user_id === S.user.id ? ' <span class="st-m-self">شما</span>' : "");
           return '<div class="st-lb-row ' + rankCls + selfCls + '">' +
             '<div class="st-lb-rank">' + (row.shared ? fa0(idx + 1) : '🔒') + '</div>' +
-            '<div class="st-lb-avatar st-avatar-' + esc(avKey) + '">' + esc(initial) + '</div>' +
+            '<div class="st-lb-avatar st-avatar-' + esc(avKey) + '">' + _avatarInnerHTML(m) + '</div>' +
             '<div class="st-lb-name">' + esc(m.display_name) + (row.isSelf ? ' <span class="st-m-self">شما</span>' : '') + '</div>' +
             '<div class="st-lb-dur">' + durStr + '</div>' +
           '</div>';
@@ -1656,6 +1867,7 @@
         }
       }
       body = statsHTML +
+        _renderFriendDayHTML(view.user_id) +
         activityHTML +
         '<div class="st-card"><div class="st-members-title">📚 به تفکیک درس</div>' + courseHTML + '</div>' +
         '<div class="st-card"><div class="st-members-title">📜 تاریخچهٔ اخیر</div>' + historyHTML + '</div>';
@@ -1668,7 +1880,7 @@
           '<button class="st-btn-ghost st-btn-small" data-st-act="member-close-profile" title="بستن">✖ بستن</button>' +
         '</div>' +
         '<div class="st-profile-hero">' +
-          '<div class="st-profile-avatar st-avatar-' + esc(avKey) + '">' + esc(initial) + '</div>' +
+          '<div class="st-profile-avatar st-avatar-' + esc(avKey) + '">' + _avatarInnerHTML(view) + '</div>' +
           '<div class="st-profile-info">' +
             '<div class="st-profile-name">' + esc(view.display_name) + '</div>' +
             '<div class="st-profile-username">@' + esc(view.username) + '</div>' +
@@ -1691,7 +1903,7 @@
       var initial = (m.display_name || "?").charAt(0);
       var avKey = m.avatar_key || "av-1";
       return '<div class="st-member st-member-clickable ' + cls + '" data-st-act="member-open-profile" data-member-id="' + esc(m.user_id) + '" role="button" tabindex="0" title="مشاهدهٔ پروفایل">' +
-        '<div class="st-m-avatar st-m-avatar-' + cls + ' st-avatar-' + esc(avKey) + '">' + esc(initial) + '</div>' +
+        '<div class="st-m-avatar st-m-avatar-' + cls + ' st-avatar-' + esc(avKey) + '">' + _avatarInnerHTML(m) + '</div>' +
         '<div class="st-m-body">' +
           '<div class="st-m-name">' + esc(m.display_name) + (m.role === "owner" ? ' <span class="st-m-owner">مالک</span>' : "") + (isSelf ? ' <span class="st-m-self">شما</span>' : "") + '</div>' +
           '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + '</div>' +
@@ -1939,7 +2151,7 @@
                     display_name: pr.display_name || "?", username: pr.username || "?",
                     share_timeline: !!pr.share_timeline, share_daily_total: !!pr.share_daily_total,
                     share_course_breakdown: !!pr.share_course_breakdown, share_history_with_group: !!pr.share_history_with_group,
-                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null };
+                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null, avatar_url: pr.avatar_url || null };
                 });
                 recomputeTodayTotal(todaySessions);
                 return qFindOwnOpenSession(S.user.id, g.id).then(function (open) {
@@ -2135,7 +2347,7 @@
       var ownerBadge = m.role === "owner" ? ' <span class="st-m-owner">مالک</span>' : "";
       var selfMark = isSelf ? ' <span class="st-m-self">شما</span>' : "";
       return '<div class="st-member ' + cls + '">' +
-        '<div class="st-m-avatar st-m-avatar-' + cls + '" aria-hidden="true">' + esc(initial) + '</div>' +
+        '<div class="st-m-avatar st-m-avatar-' + cls + ' st-avatar-' + esc(m.avatar_key || "av-1") + '" aria-hidden="true">' + _avatarInnerHTML(m) + '</div>' +
         '<div class="st-m-body">' +
           '<div class="st-m-name">' + esc(m.display_name) + ownerBadge + selfMark + '</div>' +
           '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + '</div>' +
@@ -2277,6 +2489,7 @@
     S.container.querySelectorAll("[data-st-act]").forEach(function (el) {
       if (el.tagName === "FORM") el.addEventListener("submit", onSubmit);
       else if (el.tagName === "SELECT") el.addEventListener("change", onSelect);
+    else if (el.tagName === "INPUT" && (el.getAttribute("data-st-act") === "avatar-file" || el.getAttribute("data-st-act") === "friend-day-set")) el.addEventListener("change", onSelect);
       else el.addEventListener("click", onClick);
     });
   }
@@ -2284,6 +2497,16 @@
     var t = e.target;
     if (!t || !t.getAttribute) return;
     var act = t.getAttribute("data-st-act");
+    if (act === "avatar-file") {
+      var _f = t.files && t.files[0];
+      try { t.value = ""; } catch (e) {}
+      if (_f) _avatarUpload(_f);
+      return;
+    }
+    if (act === "friend-day-set") {
+      if (S.memberProfileView) _friendDaySetDate(S.memberProfileView.user_id, t.value);
+      return;
+    }
     if (act === "hist-course-filter") {
       var v = t.value;
       S.historyCourseFilter = (v === "") ? null : v;
@@ -2382,8 +2605,12 @@
     if (act === "course-archive") { var _ar = t.getAttribute("data-course-id"); if (_ar && confirm("\u0622\u0631\u0634\u06CC\u0648 \u0634\u0648\u062F\u061F")) _archiveCourse(_ar); return; }
     if (act === "course-delete") { var _dc = t.getAttribute("data-course-id"); if (_dc && confirm("درس حذف شود؟ جلسات مرتبط باقی می‌مانند اما «بدون درس» می‌شوند.")) _deleteCourse(_dc); return; }
     if (act === "profile-save") { doSaveProfile(); return; }
+    if (act === "avatar-remove") { _avatarRemove(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
     if (act === "member-open-profile") { _openMemberProfile(t.getAttribute("data-member-id")); return; }
+    if (act === "friend-day-prev") { _friendDayShift(-1); return; }
+    if (act === "friend-day-next") { _friendDayShift(1); return; }
+    if (act === "friend-day-today") { if (S.memberProfileView) _friendDaySetDate(S.memberProfileView.user_id, _friendDayToday()); return; }
     if (act === "member-close-profile") { _closeMemberProfile(); return; }
     if (act === "member-close-overlay") { if (e.target === t) _closeMemberProfile(); return; }
     if (act === "lb-period") {
@@ -2583,7 +2810,7 @@
     S.readyView = "main"; S.onBreak = false; S.todaySessionCount = 0; S.lastSessionEndedAt = null;
     S.historySessions = null; S.historyView = "list"; S.historyEdit = null; S.historyError = null; S.historySaving = false; S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
-    S.avatarPick = null;
+    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null;
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
@@ -2633,7 +2860,7 @@
     S.historySaving = false;
     S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
-    S.avatarPick = null;
+    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null;
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;

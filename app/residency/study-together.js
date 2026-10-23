@@ -26,9 +26,9 @@
     pom: null,
     historySessions: null, historyView: "list", historyEdit: null, historyError: null, historySaving: false, historyPendingDelete: null,
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
-    avatarPick: null, avatarBusy: false, avatarError: null, sharePlanPreview: null, sharePlanBusy: false, sharePlanError: null, friendPlanData: null, friendPlanLoading: false, friendPlanError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
+    avatarPick: null, avatarBusy: false, avatarError: null, sharePlanPreview: null, sharePlanBusy: false, sharePlanError: null, friendPlanData: null, inviteVisible: false, accountBusy: { identity: false, privacy: false, password: false, email: false }, accountErr: { identity: null, privacy: null, password: null, email: null }, accountOk: { identity: null, privacy: null, password: null, email: null }, friendPlanLoading: false, friendPlanError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
-    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null,
+    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null, historyRangeMode: "shortcut", historyFromDate: null, historyToDate: null, calYear: null, calMonth: null, histExpanded: null,
     memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
     leaderboardData: null, leaderboardLoading: false, leaderboardError: null, leaderboardPeriod: "today"
   };
@@ -584,25 +584,43 @@
     }
     return errs;
   }
+  function _historyResolveRange() {
+    var endD = new Date(); endD.setHours(23, 59, 59, 999);
+    var startD = new Date(); startD.setHours(0, 0, 0, 0);
+    if (S.historyRangeMode === "custom" && S.historyFromDate && S.historyToDate) {
+      startD = new Date(S.historyFromDate + "T00:00:00");
+      endD = new Date(S.historyToDate + "T23:59:59.999");
+    } else if (S.historyRangeMode === "day" && S.historyFromDate) {
+      startD = new Date(S.historyFromDate + "T00:00:00");
+      endD = new Date(S.historyFromDate + "T23:59:59.999");
+    } else {
+      var days = S.historyRangeDays || 7;
+      startD = new Date(); startD.setHours(0, 0, 0, 0);
+      startD.setDate(startD.getDate() - (days - 1));
+    }
+    return { startIso: startD.toISOString(), endIso: endD.toISOString() };
+  }
   function _loadHistory() {
     if (!S.user || !S.group) return Promise.resolve();
-    var days = S.historyRangeDays || 7;
-    var endD = new Date(); endD.setDate(endD.getDate() + 1); endD.setHours(0, 0, 0, 0);
-    var startD = new Date(endD); startD.setDate(startD.getDate() - days);
-    return qGetRangeSessions(S.user.id, S.group.id, startD.toISOString(), endD.toISOString())
+    var r = _historyResolveRange();
+    return qGetRangeSessions(S.user.id, S.group.id, r.startIso, r.endIso)
       .then(function (rows) { S.historySessions = rows; })
       .catch(function (err) { S.historyError = String(err && err.message || err); S.historySessions = []; });
   }
-  function doSaveProfile() {
-    if (!S.user || !_sb || !S.container) return;
-    var statusEl = S.container.querySelector('[data-st-settings-status]');
-    var saveBtn = S.container.querySelector('[data-st-act="profile-save"]');
+  function _savePrivacy() {
+    if (!S.user || !_sb) return;
+    S.accountBusy.privacy = true;
+    S.accountErr.privacy = null;
+    S.accountOk.privacy = null;
+    render();
     var get = function (k) { var el = S.container.querySelector('[data-st-setting="' + k + '"]'); return el ? !!el.checked : false; };
     var _newAvatar = S.avatarPick || (S.profile && S.profile.avatar_key) || "av-1";
     var bioEl = S.container.querySelector('[data-st-bio]');
     var _newBio = bioEl ? String(bioEl.value || "").trim() : null;
     if (_newBio !== null && _newBio.length > 200) {
-      if (statusEl) statusEl.textContent = "\u062D\u062F\u0627\u06A9\u062B\u0631 \u06F2\u06F0\u06F0";
+      S.accountBusy.privacy = false;
+      S.accountErr.privacy = "\u062D\u062F\u0627\u06A9\u062B\u0631 \u06F2\u06F0\u06F0";
+      render();
       return;
     }
     var patch = {
@@ -610,32 +628,168 @@
       share_timeline: get("share_timeline"),
       share_course_breakdown: get("share_course_breakdown"),
       share_history_with_group: get("share_history_with_group"),
+      share_daily_plan: get("share_daily_plan"),
       avatar_key: _newAvatar,
       updated_at: new Date().toISOString()
     };
     if (_newBio !== null) patch.bio = (_newBio || null);
-    if (statusEl) statusEl.textContent = "در حال ذخیره...";
-    if (saveBtn) saveBtn.disabled = true;
     _sb.from("profiles").update(patch).eq("id", S.user.id).then(function (r) {
       if (r && r.error) throw r.error;
-      if (saveBtn) saveBtn.disabled = false;
+      S.accountBusy.privacy = false;
+      S.accountOk.privacy = "\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F";
       if (S.profile) {
         S.profile.share_daily_total = patch.share_daily_total;
         S.profile.share_timeline = patch.share_timeline;
         S.profile.share_course_breakdown = patch.share_course_breakdown;
         S.profile.share_history_with_group = patch.share_history_with_group;
+        S.profile.share_daily_plan = patch.share_daily_plan;
         S.profile.avatar_key = patch.avatar_key;
         if (patch.bio !== undefined) S.profile.bio = patch.bio;
       }
       S.avatarPick = null;
-      if (statusEl) statusEl.textContent = "ذخیره شد";
-      try { notify("success", "تنظیمات ذخیره شد"); } catch (e) {}
       try { broadcastPresence(); } catch (e) {}
+      try { notify("success", "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F"); } catch (e) {}
+      render();
     }).catch(function (err) {
-      if (saveBtn) saveBtn.disabled = false;
-      if (statusEl) statusEl.textContent = "خطا: " + String(err && err.message || err);
-      try { notify("error", "ذخیره ناموفق"); } catch (e) {}
+      S.accountBusy.privacy = false;
+      S.accountErr.privacy = String(err && err.message || err);
+      render();
     });
+  }
+  function _saveIdentity() {
+    if (!S.user || !_sb) return;
+    var dnEl = S.container.querySelector('[data-account-field="display_name"]');
+    var unEl = S.container.querySelector('[data-account-field="username"]');
+    if (!dnEl || !unEl) return;
+    var dn = String(dnEl.value || "").trim();
+    var un = String(unEl.value || "").trim().toLowerCase();
+    if (dn.length < 1 || dn.length > 64) { S.accountErr.identity = "\u0646\u0627\u0645 \u062F\u06CC\u0633\u067E\u0644\u06CC \u0628\u0627\u06CC\u062F \u06F1-\u06F6\u06F4 \u06A9\u0627\u0631\u0627\u06A9\u062A\u0631 \u0628\u0627\u0634\u062F"; render(); return; }
+    if (un.length < 2 || un.length > 32) { S.accountErr.identity = "\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0628\u0627\u06CC\u062F \u06F2-\u06F3\u06F2 \u06A9\u0627\u0631\u0627\u06A9\u062A\u0631 \u0628\u0627\u0634\u062F"; render(); return; }
+    if (!/^[a-z0-9_.-]+$/.test(un)) { S.accountErr.identity = "\u0641\u0642\u0637 \u062D\u0631\u0648\u0641 \u0627\u0646\u06AF\u0644\u06CC\u0633\u06CC\u060C \u0639\u062F\u062F\u060C _.-"; render(); return; }
+    if (un !== (S.profile.username || "").toLowerCase()) {
+      S.accountBusy.identity = true;
+      S.accountErr.identity = null;
+      S.accountOk.identity = null;
+      render();
+      _sb.from("profiles").select("id").eq("username", un).neq("id", S.user.id).limit(1).then(function (rr) {
+        if (rr && rr.error) throw rr.error;
+        if (rr.data && rr.data.length > 0) {
+          throw new Error("\u0627\u06CC\u0646 \u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0627\u0632 \u0642\u0628\u0644 \u0627\u062E\u062A\u0635\u0627\u0635 \u06CC\u0627\u0641\u062A\u0647");
+        }
+        return _sb.from("profiles").update({ display_name: dn, username: un, updated_at: new Date().toISOString() }).eq("id", S.user.id);
+      }).then(function (r) {
+        if (r && r.error) throw r.error;
+        S.profile.display_name = dn;
+        S.profile.username = un;
+        for (var i = 0; i < S.members.length; i++) {
+          if (S.members[i].user_id === S.user.id) {
+            S.members[i].display_name = dn;
+            S.members[i].username = un;
+          }
+        }
+        S.accountBusy.identity = false;
+        S.accountOk.identity = "\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F";
+        try { broadcastPresence(); } catch (e) {}
+        try { notify("success", "\u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F"); } catch (e) {}
+        render();
+      }).catch(function (err) {
+        S.accountBusy.identity = false;
+        S.accountErr.identity = String(err && err.message || err);
+        render();
+      });
+      return;
+    }
+    S.accountBusy.identity = true;
+    S.accountErr.identity = null;
+    S.accountOk.identity = null;
+    render();
+    _sb.from("profiles").update({ display_name: dn, updated_at: new Date().toISOString() }).eq("id", S.user.id).then(function (r) {
+      if (r && r.error) throw r.error;
+      S.profile.display_name = dn;
+      for (var i = 0; i < S.members.length; i++) {
+        if (S.members[i].user_id === S.user.id) S.members[i].display_name = dn;
+      }
+      S.accountBusy.identity = false;
+      S.accountOk.identity = "\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F";
+      try { broadcastPresence(); } catch (e) {}
+      try { notify("success", "\u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F"); } catch (e) {}
+      render();
+    }).catch(function (err) {
+      S.accountBusy.identity = false;
+      S.accountErr.identity = String(err && err.message || err);
+      render();
+    });
+  }
+  function _changeEmail() {
+    if (!S.user || !_sb) return;
+    var el = S.container.querySelector('[data-account-field="new_email"]');
+    if (!el) return;
+    var newEmail = String(el.value || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+      S.accountErr.email = "\u0627\u06CC\u0645\u06CC\u0644 \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A";
+      render();
+      return;
+    }
+    if (newEmail.toLowerCase() === String(S.user.email || "").toLowerCase()) {
+      S.accountErr.email = "\u0627\u06CC\u0645\u06CC\u0644 \u0641\u0639\u0644\u06CC \u0648 \u062C\u062F\u06CC\u062F \u06CC\u06A9\u0633\u0627\u0646 \u0627\u0633\u062A";
+      render();
+      return;
+    }
+    S.accountBusy.email = true;
+    S.accountErr.email = null;
+    S.accountOk.email = null;
+    render();
+    _sb.auth.updateUser({ email: newEmail }).then(function (r) {
+      if (r && r.error) throw r.error;
+      S.accountBusy.email = false;
+      S.accountOk.email = "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062B\u0628\u062A \u0634\u062F \u2014 \u0627\u06CC\u0645\u06CC\u0644 \u062A\u0623\u06CC\u06CC\u062F \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F";
+      try { notify("success", "\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062A\u063A\u06CC\u06CC\u0631 \u0627\u06CC\u0645\u06CC\u0644 \u062B\u0628\u062A \u0634\u062F"); } catch (e) {}
+      render();
+    }).catch(function (err) {
+      S.accountBusy.email = false;
+      S.accountErr.email = String(err && err.message || err);
+      render();
+    });
+  }
+  function _changePassword() {
+    if (!S.user || !_sb) return;
+    var p1 = S.container.querySelector('[data-account-field="new_password"]');
+    var p2 = S.container.querySelector('[data-account-field="confirm_password"]');
+    if (!p1 || !p2) return;
+    var v1 = String(p1.value || "");
+    var v2 = String(p2.value || "");
+    if (v1.length < 8) { S.accountErr.password = "\u062D\u062F\u0627\u0642\u0644 \u06F8 \u06A9\u0627\u0631\u0627\u06A9\u062A\u0631"; render(); return; }
+    if (v1 !== v2) { S.accountErr.password = "\u062A\u06A9\u0631\u0627\u0631 \u0631\u0645\u0632 \u0645\u0637\u0627\u0628\u0642\u062A \u0646\u062F\u0627\u0631\u062F"; render(); return; }
+    S.accountBusy.password = true;
+    S.accountErr.password = null;
+    S.accountOk.password = null;
+    render();
+    _sb.auth.updateUser({ password: v1 }).then(function (r) {
+      if (r && r.error) throw r.error;
+      S.accountBusy.password = false;
+      S.accountOk.password = "\u0631\u0645\u0632 \u0628\u0627 \u0645\u0648\u0641\u0642\u06CC\u062A \u062A\u063A\u06CC\u06CC\u0631 \u06A9\u0631\u062F";
+      var pp1 = S.container.querySelector('[data-account-field="new_password"]');
+      var pp2 = S.container.querySelector('[data-account-field="confirm_password"]');
+      if (pp1) pp1.value = "";
+      if (pp2) pp2.value = "";
+      try { notify("success", "\u0631\u0645\u0632 \u062A\u063A\u06CC\u06CC\u0631 \u06A9\u0631\u062F"); } catch (e) {}
+      render();
+    }).catch(function (err) {
+      S.accountBusy.password = false;
+      S.accountErr.password = String(err && err.message || err);
+      render();
+    });
+  }
+  function _togglePasswordVisibility(el) {
+    if (!el) return;
+    var input = el.parentNode.querySelector("input");
+    if (!input) return;
+    if (input.type === "password") { input.type = "text"; el.textContent = "\uD83D\uDE48"; }
+    else { input.type = "password"; el.textContent = "\uD83D\uDC41"; }
+  }
+  function _toggleInviteVisibility() {
+    S.inviteVisible = !S.inviteVisible;
+    render();
   }
   function _avatarInnerHTML(member) {
     var url = member && member.avatar_url;
@@ -874,25 +1028,55 @@
       durSec = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
     }
     var dur = _fmtTimer(durSec);
-    var badge;
-    if (s.end_reason === "crash") badge = '<span class="st-hist-badge st-hist-badge-crash">قطع‌شده</span>';
-    else if (s.end_reason === "break") badge = '<span class="st-hist-badge st-hist-badge-break">استراحت</span>';
-    else if (s.end_reason === "ended") badge = '<span class="st-hist-badge st-hist-badge-ended">پایان</span>';
-    else badge = '<span class="st-hist-badge st-hist-badge-open">باز</span>';
-    var manual = (s.client_session_id || "").indexOf("manual-") === 0 ? '<span class="st-hist-badge st-hist-badge-manual">دستی</span>' : "";
+    var badge, badgeCls;
+    if (s.end_reason === "crash") { badge = "\u0642\u0637\u0639\u200C\u0634\u062F\u0647"; badgeCls = "st-hist-badge-crash"; }
+    else if (s.end_reason === "break") { badge = "\u0627\u0633\u062A\u0631\u0627\u062D\u062A"; badgeCls = "st-hist-badge-break"; }
+    else if (s.end_reason === "ended") { badge = "\u067E\u0627\u06CC\u0627\u0646"; badgeCls = "st-hist-badge-ended"; }
+    else { badge = "\u0628\u0627\u0632"; badgeCls = "st-hist-badge-open"; }
+    var isManual = (s.client_session_id || "").indexOf("manual-") === 0;
+    var c = _courseById(s.course_id || null);
+    var courseName = c ? c.name : "\u0628\u062F\u0648\u0646 \u062F\u0631\u0633";
+    var courseIcon = c && c.icon ? _courseIconGlyph(c.icon) : "\uD83D\uDCDA";
+    var colorCls = c ? _courseColorClass(c) : "st-course-none";
+    var iconBg = c ? "" : "background:rgba(148,163,184,0.18);";
+    var expanded = S.histExpanded === s.id;
+
     var actions = "";
     var editable = s.ended_at && s.end_reason !== "crash";
     if (editable) {
-      actions = '<button class="st-btn-ghost st-btn-small" data-st-act="hist-edit" data-hist-id="' + esc(s.id) + '" title="ویرایش">✏️</button>' +
-                '<button class="st-btn-danger st-btn-small" data-st-act="hist-delete" data-hist-id="' + esc(s.id) + '" title="حذف">🗑️</button>';
+      actions = '<button class="st-btn-ghost st-btn-small" data-st-act="hist-edit" data-hist-id="' + esc(s.id) + '" title="\u0648\u06CC\u0631\u0627\u06CC\u0634">\u270F\uFE0F</button>' +
+                '<button class="st-btn-danger st-btn-small" data-st-act="hist-delete" data-hist-id="' + esc(s.id) + '" title="\u062D\u0630\u0641">\uD83D\uDDD1\uFE0F</button>';
     }
-    return '<div class="st-hist-row">' +
-      '<div class="st-hist-row-main">' +
-        '<span class="st-hist-row-time">' + start + ' — ' + end + '</span>' +
-        '<span class="st-hist-row-dur">' + dur + '</span>' +
-        '<span class="st-hist-row-badges">' + badge + manual + '</span>' +
+
+    var expandHTML = "";
+    if (expanded) {
+      expandHTML = '<div class="st-hist-row-expand">' +
+        '<dl><dt>\u0634\u0631\u0648\u0639:</dt><dd>' + esc(start) + '</dd></dl>' +
+        '<dl><dt>\u067E\u0627\u06CC\u0627\u0646:</dt><dd>' + esc(end) + '</dd></dl>' +
+        '<dl><dt>\u0645\u062F\u062A:</dt><dd>' + dur + '</dd></dl>' +
+        '<dl><dt>\u062F\u0631\u0633:</dt><dd>' + esc(courseName) + '</dd></dl>' +
+        '<dl><dt>\u0648\u0636\u0639\u06CC\u062A:</dt><dd>' + esc(badge) + '</dd></dl>' +
+        (isManual ? '<dl><dt>\u0646\u0648\u0639:</dt><dd>\u062B\u0628\u062A \u062F\u0633\u062A\u06CC</dd></dl>' : '') +
+      '</div>';
+    }
+
+    return '<div class="st-hist-row-v2" data-st-act="hist-expand" data-hist-id="' + esc(s.id) + '">' +
+      '<div class="st-hist-course-icon ' + colorCls + '" style="' + iconBg + '">' + esc(courseIcon) + '</div>' +
+      '<div class="st-hist-row-body">' +
+        '<div class="st-hist-row-title">' +
+          '<span class="st-hist-row-course' + (c ? "" : " is-none") + '">' + esc(courseName) + '</span>' +
+          '<span class="st-hist-badge-v2 ' + badgeCls + '">' + esc(badge) + '</span>' +
+          (isManual ? '<span class="st-hist-badge-v2 st-hist-badge-manual">\u062F\u0633\u062A\u06CC</span>' : '') +
+        '</div>' +
+        '<div class="st-hist-row-meta">' +
+          '<span>\u23F1 ' + esc(start) + ' \u2192 ' + esc(end) + '</span>' +
+        '</div>' +
       '</div>' +
-      '<div class="st-hist-row-actions">' + actions + '</div>' +
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">' +
+        '<div class="st-hist-row-dur-big">' + dur + '</div>' +
+        '<div class="st-hist-actions-v2">' + actions + '</div>' +
+      '</div>' +
+      expandHTML +
     '</div>';
   }
   function _filteredHistorySessions() {
@@ -921,16 +1105,150 @@
       return s.course_id === cf;
     });
   }
-  function _renderHistRangePills() {
+  function _histEnsureCalState() {
+    if (S.calYear === null || S.calMonth === null) {
+      var t = (window.InternshipLib && window.InternshipLib.date && window.InternshipLib.date.todayJalaliObj)
+        ? window.InternshipLib.date.todayJalaliObj() : null;
+      if (t) { S.calYear = t.jy; S.calMonth = t.jm; }
+      else {
+        var d = new Date();
+        S.calYear = d.getFullYear(); S.calMonth = d.getMonth() + 1;
+      }
+    }
+  }
+  function _histJalaliDateToIso(jy, jm, jd) {
+    var dlib = window.InternshipLib && window.InternshipLib.date;
+    if (!dlib || !dlib.jalaliToDayNumber || !dlib.todayJalaliObj) return null;
+    try {
+      var n = dlib.jalaliToDayNumber(jy, jm, jd);
+      if (!isFinite(n)) return null;
+      var today = dlib.todayJalaliObj();
+      if (!today) return null;
+      var todayNum = dlib.jalaliToDayNumber(today.jy, today.jm, today.jd);
+      if (!isFinite(todayNum)) return null;
+      var offset = n - todayNum;
+      var d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offset);
+      return d;
+    } catch (e) { return null; }
+  }
+  function _histCalPrevMonth() {
+    _histEnsureCalState();
+    S.calMonth--;
+    if (S.calMonth < 1) { S.calMonth = 12; S.calYear--; }
+    render();
+  }
+  function _histCalNextMonth() {
+    _histEnsureCalState();
+    S.calMonth++;
+    if (S.calMonth > 12) { S.calMonth = 1; S.calYear++; }
+    render();
+  }
+  function _histCalGoToday() {
+    var t = (window.InternshipLib && window.InternshipLib.date && window.InternshipLib.date.todayJalaliObj)
+      ? window.InternshipLib.date.todayJalaliObj() : null;
+    if (t) { S.calYear = t.jy; S.calMonth = t.jm; }
+    var d = new Date();
+    var iso = d.getFullYear() + "-" + ((d.getMonth()+1<10?"0":"")+(d.getMonth()+1)) + "-" + ((d.getDate()<10?"0":"")+d.getDate());
+    S.historyRangeMode = "day";
+    S.historyFromDate = iso;
+    S.historyToDate = iso;
+    S.historyDayFilter = null;
+    S.historySessions = null;
+    render();
+    _loadHistory().then(function () { render(); });
+  }
+  function _histCalSelectDay(jy, jm, jd) {
+    var g = _histJalaliDateToIso(jy, jm, jd);
+    if (!g) return;
+    var iso = g.getFullYear() + "-" + ((g.getMonth()+1<10?"0":"")+(g.getMonth()+1)) + "-" + ((g.getDate()<10?"0":"")+g.getDate());
+    S.historyRangeMode = "day";
+    S.historyFromDate = iso;
+    S.historyToDate = iso;
+    S.historyDayFilter = null;
+    S.historySessions = null;
+    render();
+    _loadHistory().then(function () { render(); });
+  }
+  function _renderHistCalendar() {
+    _histEnsureCalState();
+    var dlib = window.InternshipLib && window.InternshipLib.date;
+    if (!dlib || !dlib.jalaliMonthLength || !dlib.jalaliMonthStartWeekday) {
+      return '<div class="st-hist-empty">\u062A\u0642\u0648\u06CC\u0645 \u0634\u0645\u0633\u06CC \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A</div>';
+    }
+    var year = S.calYear, month = S.calMonth;
+    var monthLen = dlib.jalaliMonthLength(year, month);
+    var startWd = dlib.jalaliMonthStartWeekday(year, month); // 0=Sat .. 6=Fri (Persian week)
+    var todayJ = dlib.todayJalaliObj ? dlib.todayJalaliObj() : null;
+    var todayY = todayJ ? todayJ.jy : null, todayM = todayJ ? todayJ.jm : null, todayD = todayJ ? todayJ.jd : null;
+    var MONTHS = ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646","\u0627\u0631\u062F\u06CC\u0628\u0647\u0634\u062A","\u062E\u0631\u062F\u0627\u062F","\u062A\u06CC\u0631","\u0645\u0631\u062F\u0627\u062F","\u0634\u0647\u0631\u06CC\u0648\u0631","\u0645\u0647\u0631","\u0622\u0628\u0627\u0646","\u0622\u0630\u0631","\u062F\u06CC","\u0628\u0647\u0645\u0646","\u0627\u0633\u0641\u0646\u062F"];
+    var monthName = MONTHS[month - 1] || "";
+    // Build day set with data — count of sessions per day from current loaded history (shortcut mode)
+    var dataByDay = {};
+    (S.historySessions || []).forEach(function (s) {
+      if (!s.ended_at || s.end_reason === "crash") return;
+      var st = new Date(s.started_at);
+      var k = st.getFullYear() + "-" + (st.getMonth()+1) + "-" + st.getDate();
+      if (!dataByDay[k]) dataByDay[k] = { sec: 0, count: 0 };
+      dataByDay[k].sec += Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st.getTime()) / 1000));
+      dataByDay[k].count++;
+    });
+    var maxSec = 0; Object.keys(dataByDay).forEach(function (k) { if (dataByDay[k].sec > maxSec) maxSec = dataByDay[k].sec; });
+    if (maxSec === 0) maxSec = 1;
+
+    var dows = ["\u0634","\u06CC","\u062F","\u0633","\u0686","\u067E","\u062C"];
+    var html = '<div class="st-cal-wrap">' +
+      '<div class="st-cal-head">' +
+        '<button class="st-cal-nav-btn" data-st-act="cal-prev" title="\u0645\u0627\u0647 \u0642\u0628\u0644">\u2039</button>' +
+        '<div class="st-cal-title">' + esc(monthName) + ' ' + fa0(year) + '</div>' +
+        '<button class="st-cal-nav-btn" data-st-act="cal-next" title="\u0645\u0627\u0647 \u0628\u0639\u062F">\u203A</button>' +
+        '<button class="st-cal-today-btn" data-st-act="cal-today">\u0627\u0645\u0631\u0648\u0632</button>' +
+      '</div>' +
+      '<div class="st-cal-grid">' +
+        dows.map(function (d) { return '<div class="st-cal-dow">' + d + '</div>'; }).join("");
+
+    for (var i = 0; i < startWd; i++) html += '<div class="st-cal-cell is-empty"></div>';
+    for (var d = 1; d <= monthLen; d++) {
+      var cellDate = _histJalaliDateToIso(year, month, d);
+      var iso = null;
+      if (cellDate) iso = cellDate.getFullYear() + "-" + ((cellDate.getMonth()+1<10?"0":"")+(cellDate.getMonth()+1)) + "-" + ((cellDate.getDate()<10?"0":"")+cellDate.getDate());
+      var isToday = (year === todayY && month === todayM && d === todayD);
+      var isSelected = (S.historyRangeMode === "day" && S.historyFromDate === iso);
+      var dayRec = iso ? dataByDay[iso] : null;
+      var hasData = !!(dayRec && dayRec.sec > 0);
+      var isHeavy = hasData && (dayRec.sec / maxSec) > 0.6;
+      var cls = "st-cal-cell";
+      if (isToday) cls += " is-today";
+      if (isSelected) cls += " is-selected";
+      if (hasData) cls += " has-data";
+      if (isHeavy) cls += " is-heavy";
+      var title = hasData ? (Math.floor(dayRec.sec / 60) + " \u062F\u0642\u06CC\u0642\u0647 \u00B7 " + dayRec.count + " \u062C\u0644\u0633\u0647") : "";
+      html += '<button class="' + cls + '" data-st-act="cal-day" data-jy="' + year + '" data-jm="' + month + '" data-jd="' + d + '" title="' + title + '">' + fa0(d) + '</button>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+    function _renderHistRangePills() {
     var opts = [
-      { id: 7, label: "۷ روز" },
-      { id: 30, label: "۳۰ روز" },
-      { id: 90, label: "۹۰ روز" }
+      { id: "7", label: "\u06F7 \u0631\u0648\u0632", mode: "shortcut", days: 7 },
+      { id: "30", label: "\u06F3\u06F0 \u0631\u0648\u0632", mode: "shortcut", days: 30 },
+      { id: "90", label: "\u06F9\u06F0 \u0631\u0648\u0632", mode: "shortcut", days: 90 },
+      { id: "custom", label: "\u0628\u0627\u0632\u0647\u0654 \u062F\u0644\u062E\u0648\u0627\u0647", mode: "custom" }
     ];
-    return '<div class="st-hist-range-pills">' + opts.map(function (o) {
-      var cls = "st-hist-range-pill" + (S.historyRangeDays === o.id ? " is-active" : "");
+    var activeId = S.historyRangeMode === "custom" ? "custom" : (S.historyRangeMode === "day" ? "day" : String(S.historyRangeDays || 7));
+    var html = '<div class="st-hist-range-pills">' + opts.map(function (o) {
+      var cls = "st-hist-range-pill" + (activeId === o.id ? " is-active" : "");
       return '<button type="button" class="' + cls + '" data-st-act="hist-range" data-range="' + o.id + '">' + o.label + '</button>';
     }).join("") + '</div>';
+    if (S.historyRangeMode === "custom") {
+      var f = S.historyFromDate || "";
+      var t = S.historyToDate || "";
+      html += '<div class="st-hist-filters">' +
+        '<label style="font-size:11px;opacity:0.75;">\u0627\u0632 <input type="date" data-st-act="hist-from-date" value="' + esc(f) + '" style="margin-inline-start:6px;"></label>' +
+        '<label style="font-size:11px;opacity:0.75;">\u062A\u0627 <input type="date" data-st-act="hist-to-date" value="' + esc(t) + '" style="margin-inline-start:6px;"></label>' +
+        '<button class="st-btn-primary st-btn-small" data-st-act="hist-apply-range">\u0627\u0639\u0645\u0627\u0644</button>' +
+      '</div>';
+    }
+    return html;
   }
   function _renderHistCourseFilter() {
     var cf = S.historyCourseFilter || "";
@@ -996,6 +1314,7 @@
         '<div class="st-user-chip">' + esc(S.profile.display_name) + '</div>' +
       '</div>' +
       '<div class="st-hero st-hero-small"><h1>📜 تاریخچهٔ مطالعه</h1></div>' +
+      _renderHistCalendar() +
       _renderHistRangePills() +
       '<div class="st-hist-filters">' +
         _renderHistCourseFilter() +
@@ -1090,6 +1409,14 @@
     if (!id) return null;
     for (var i = 0; i < S.courses.length; i++) if (S.courses[i].id === id) return S.courses[i];
     return null;
+  }
+  function _courseIconGlyph(iconName) {
+    var M = {
+      "book": "\uD83D\uDCD6", "pencil": "\u270F\uFE0F", "atom": "\u269B\uFE0F",
+      "calculator": "\uD83E\uDDEE", "globe": "\uD83C\uDF0D", "flask": "\uD83E\uDDEA",
+      "music": "\uD83C\uDFB5", "code": "\uD83D\uDCBB"
+    };
+    return M[iconName] || "\uD83D\uDCDA";
   }
   function _courseColorClass(course) {
     if (!course) return "st-course-1";
@@ -1241,58 +1568,130 @@
     var p = S.profile || {};
     var today = S.todayTotal || 0;
     var weekSec = 0;
-    // week: sum of last 7 days from historySessions if loaded
     var hs = S.historySessions || [];
     var cutoff = Date.now() - 7 * 86400000;
     hs.forEach(function (s) {
-      if (!s.ended_at) return;
-      if (s.end_reason === "crash") return;
+      if (!s.ended_at || s.end_reason === "crash") return;
       var st = new Date(s.started_at).getTime();
       if (st < cutoff) return;
       weekSec += Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st) / 1000));
     });
     var avatarKey = S.avatarPick || p.avatar_key || "av-1";
-    var initial = (p.display_name || "?").charAt(0);
     var shareDaily = !!p.share_daily_total;
     var shareTL = !!p.share_timeline;
     var shareBreak = !!p.share_course_breakdown;
     var shareHist = !!p.share_history_with_group;
+    var sharePlan = !!p.share_daily_plan;
+    var memberSince = p.created_at ? String(p.created_at).slice(0, 10) : "";
+    var isOwner = S.group && p && S.group.owner_id === S.user.id;
+
+    var identitySection =
+      '<div class="st-account-section">' +
+        '<div class="st-account-section-head">' +
+          '<div class="st-account-section-icon">\uD83D\uDC64</div>' +
+          '<div><div class="st-account-section-title">\u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0634\u062E\u0635\u06CC</div>' +
+          '<div class="st-account-section-desc">\u0646\u0627\u0645 \u0646\u0645\u0627\u06CC\u0634\u06CC \u0648 \u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u062F\u0631 \u06AF\u0631\u0648\u0647 \u0646\u0645\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F.</div></div>' +
+        '</div>' +
+        '<div class="st-account-field"><label>\u0646\u0627\u0645 \u0646\u0645\u0627\u06CC\u0634\u06CC</label><input type="text" data-account-field="display_name" value="' + esc(p.display_name || "") + '" maxlength="64"' + (S.accountBusy.identity ? ' disabled' : '') + '></div>' +
+        '<div class="st-account-field"><label>\u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC (username)</label><input type="text" data-account-field="username" value="' + esc(p.username || "") + '" maxlength="32"' + (S.accountBusy.identity ? ' disabled' : '') + '><div class="st-account-field-hint">\u062D\u0631\u0648\u0641 \u0627\u0646\u06AF\u0644\u06CC\u0633\u06CC \u06A9\u0648\u0686\u06A9\u060C \u0639\u062F\u062F\u060C _ . - \u2014 \u0628\u0627\u06CC\u062F \u06CC\u06AF\u0627\u0646\u06AF\u06CC \u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F</div></div>' +
+        '<div class="st-account-actions"><button class="st-btn-primary" data-st-act="account-save-identity"' + (S.accountBusy.identity ? ' disabled' : '') + '>' + (S.accountBusy.identity ? '\u062F\u0631 \u062D\u0627\u0644 \u0630\u062E\u06CC\u0631\u0647...' : '\u0630\u062E\u06CC\u0631\u0647 \u0627\u0637\u0644\u0627\u0639\u0627\u062A') + '</button></div>' +
+        '<div class="st-account-status ' + (S.accountErr.identity ? 'is-err' : (S.accountOk.identity ? 'is-ok' : '')) + '">' + esc(S.accountErr.identity || S.accountOk.identity || "") + '</div>' +
+      '</div>';
+
+    var emailConfirmed = S.user && S.user.email && S.user.email.length > 0;
+    var securitySection =
+      '<div class="st-account-section">' +
+        '<div class="st-account-section-icon" style="margin-bottom:10px;">\uD83D\uDD10</div>' +
+        '<div class="st-account-section-head" style="padding-bottom:8px;">' +
+          '<div><div class="st-account-section-title">\u0627\u0645\u0646\u06CC\u062A \u062D\u0633\u0627\u0628</div>' +
+          '<div class="st-account-section-desc">\u062A\u063A\u06CC\u06CC\u0631 \u0627\u06CC\u0645\u06CC\u0644 \u0648 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631</div></div>' +
+        '</div>' +
+        '<div class="st-account-field"><label>\u0627\u06CC\u0645\u06CC\u0644 \u0641\u0639\u0644\u06CC</label><input type="email" value="' + esc(S.user.email || "") + '" disabled></div>' +
+        '<div class="st-account-field"><label>\u0627\u06CC\u0645\u06CC\u0644 \u062C\u062F\u06CC\u062F</label><input type="email" data-account-field="new_email" placeholder="new@example.com" maxlength="254"' + (S.accountBusy.email ? ' disabled' : '') + '></div>' +
+        '<div class="st-account-actions"><button class="st-btn-primary" data-st-act="account-change-email"' + (S.accountBusy.email ? ' disabled' : '') + '>' + (S.accountBusy.email ? '\u062F\u0631 \u062D\u0627\u0644 \u0627\u0631\u0633\u0627\u0644...' : '\u062F\u0631\u062E\u0648\u0627\u0633\u062A \u062A\u063A\u06CC\u06CC\u0631 \u0627\u06CC\u0645\u06CC\u0644') + '</button></div>' +
+        '<div class="st-account-status ' + (S.accountErr.email ? 'is-err' : (S.accountOk.email ? 'is-ok' : '')) + '">' + esc(S.accountErr.email || S.accountOk.email || "") + '</div>' +
+        '<div style="height:1px;background:rgba(255,255,255,0.06);margin:14px 0;"></div>' +
+        '<div class="st-account-field"><label>\u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u062C\u062F\u06CC\u062F</label><div class="st-password-wrap"><input type="password" data-account-field="new_password" minlength="8" placeholder="\u062D\u062F\u0627\u0642\u0644 \u06F8 \u06A9\u0627\u0631\u0627\u06A9\u062A\u0631"' + (S.accountBusy.password ? ' disabled' : '') + '><button type="button" class="st-password-toggle" data-st-act="account-toggle-pass">\uD83D\uDC41</button></div></div>' +
+        '<div class="st-account-field"><label>\u062A\u06A9\u0631\u0627\u0631 \u0631\u0645\u0632 \u062C\u062F\u06CC\u062F</label><div class="st-password-wrap"><input type="password" data-account-field="confirm_password" minlength="8"' + (S.accountBusy.password ? ' disabled' : '') + '><button type="button" class="st-password-toggle" data-st-act="account-toggle-pass">\uD83D\uDC41</button></div></div>' +
+        '<div class="st-account-actions"><button class="st-btn-primary" data-st-act="account-change-password"' + (S.accountBusy.password ? ' disabled' : '') + '>' + (S.accountBusy.password ? '\u062F\u0631 \u062D\u0627\u0644 \u062A\u063A\u06CC\u06CC\u0631...' : '\u062A\u063A\u06CC\u06CC\u0631 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631') + '</button></div>' +
+        '<div class="st-account-status ' + (S.accountErr.password ? 'is-err' : (S.accountOk.password ? 'is-ok' : '')) + '">' + esc(S.accountErr.password || S.accountOk.password || "") + '</div>' +
+      '</div>';
+
+    var privacySection =
+      '<div class="st-account-section">' +
+        '<div class="st-account-section-head">' +
+          '<div class="st-account-section-icon">\uD83D\uDD12</div>' +
+          '<div><div class="st-account-section-title">\u062D\u0631\u06CC\u0645 \u062E\u0635\u0648\u0635\u06CC</div>' +
+          '<div class="st-account-section-desc">\u0645\u0634\u062E\u0635 \u06A9\u0646\u06CC\u062F \u0686\u0647 \u0686\u06CC\u0632\u06CC \u0628\u0627 \u062F\u0648\u0633\u062A\u0627\u0646 \u0628\u0647 \u0627\u0634\u062A\u0631\u0627\u06A9 \u06AF\u0630\u0627\u0634\u062A\u0647 \u0634\u0648\u062F.</div></div>' +
+        '</div>' +
+        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_daily_total"' + (shareDaily ? " checked" : "") + '><span class="st-settings-label">\u0627\u0634\u062A\u0631\u0627\u06A9 \u0645\u062C\u0645\u0648\u0639 \u0645\u0637\u0627\u0644\u0639\u0647\u0654 \u0627\u0645\u0631\u0648\u0632</span></label></div>' +
+        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_timeline"' + (shareTL ? " checked" : "") + '><span class="st-settings-label">\u0627\u0634\u062A\u0631\u0627\u06A9 \u0641\u0639\u0627\u0644\u06CC\u062A \u062C\u0627\u0631\u06CC Timeline</span></label></div>' +
+        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_course_breakdown"' + (shareBreak ? " checked" : "") + '><span class="st-settings-label">\u0627\u0634\u062A\u0631\u0627\u06A9 \u062A\u0641\u06A9\u06CC\u06A9 \u0622\u0645\u0627\u0631 \u062F\u0631\u0633\u200C\u0647\u0627</span></label></div>' +
+        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_history_with_group"' + (shareHist ? " checked" : "") + '><span class="st-settings-label">\u0627\u0634\u062A\u0631\u0627\u06A9 \u062A\u0627\u0631\u06CC\u062E\u0686\u0647 \u0628\u0627 \u06AF\u0631\u0648\u0647</span></label></div>' +
+        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_daily_plan"' + (sharePlan ? " checked" : "") + '><span class="st-settings-label">\u0627\u0634\u062A\u0631\u0627\u06A9 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647</span></label></div>' +
+        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="avatar_keep" checked disabled style="display:none"></label></div>' +
+        '<div class="st-account-actions"><button class="st-btn-primary" data-st-act="account-save-privacy"' + (S.accountBusy.privacy ? ' disabled' : '') + '>' + (S.accountBusy.privacy ? '\u062F\u0631 \u062D\u0627\u0644 \u0630\u062E\u06CC\u0631\u0647...' : '\u0630\u062E\u06CC\u0631\u0647 \u062A\u0646\u0637\u06CC\u0645\u0627\u062A') + '</button></div>' +
+        '<div class="st-account-status ' + (S.accountErr.privacy ? 'is-err' : (S.accountOk.privacy ? 'is-ok' : '')) + '">' + esc(S.accountErr.privacy || S.accountOk.privacy || "") + '</div>' +
+      '</div>';
+
+    var groupSection = '';
+    if (S.group) {
+      var codeVal = S.group.invite_code || "";
+      var maskedCode = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+      var codeDisplay = S.inviteVisible ? codeVal : maskedCode;
+      var codeCls = "st-group-code-value" + (S.inviteVisible ? "" : " is-masked");
+      groupSection =
+        '<div class="st-account-section">' +
+          '<div class="st-account-section-head">' +
+            '<div class="st-account-section-icon">\uD83D\uDC65</div>' +
+            '<div><div class="st-account-section-title">\u062A\u0646\u0637\u06CC\u0645\u0627\u062A \u06AF\u0631\u0648\u0647</div>' +
+            '<div class="st-account-section-desc">' + esc(S.group.name || "") + ' \u2014 ' + fa0(S.members.length) + ' \u0639\u0636\u0648</div></div>' +
+          '</div>' +
+          (isOwner ?
+            '<div class="st-group-code-wrap">' +
+              '<span class="st-group-code-label">\u06A9\u062F \u062F\u0639\u0648\u062A:</span>' +
+              '<code class="' + codeCls + '">' + (S.inviteVisible ? esc(codeVal) : maskedCode) + '</code>' +
+              '<button class="st-group-code-btn" data-st-act="invite-toggle">' + (S.inviteVisible ? '\uD83D\uDE48 \u0645\u062E\u0641\u06CC' : '\uD83D\uDC41 \u0646\u0645\u0627\u06CC\u0634') + '</button>' +
+              '<button class="st-group-code-btn" data-st-act="copy-invite">\uD83D\uDCCB \u06A9\u067E\u06CC</button>' +
+              '<button class="st-group-code-btn" data-st-act="revoke">\uD83D\uDD04 \u06A9\u062F \u062C\u062F\u06CC\u062F</button>' +
+            '</div>'
+          : '<div class="st-invite-compact">\uD83D\uDD12 \u0641\u0642\u0637 \u0645\u0627\u0644\u06A9 \u06AF\u0631\u0648\u0647 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u062F \u06A9\u062F \u062F\u0639\u0648\u062A \u0631\u0627 \u0628\u0628\u06CC\u0646\u062F</div>') +
+          '<div class="st-actions-bar" style="border-top:none;padding-top:8px;margin-top:8px;justify-content:flex-end;">' +
+            (isOwner
+              ? '<button class="st-btn-danger st-btn-small" data-st-act="delete-group">\uD83D\uDDD1\uFE0F \u062D\u0630\u0641 \u06AF\u0631\u0648\u0647</button>'
+              : '<button class="st-btn-ghost st-btn-small" data-st-act="leave">\uD83D\uDEAA \u062A\u0631\u06A9 \u06AF\u0631\u0648\u0647</button>') +
+          '</div>' +
+        '</div>';
+    }
+
     S.container.innerHTML = pageWrap(
       _navTabsHTML("profile") +
       '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(p.display_name) + '</div>' +
-        '<button class="st-btn-ghost st-btn-small" data-st-act="logout" title="خروج">🚪 خروج</button>' +
+        '<div class="st-user-chip">' + esc(p.display_name) + ' <span class="st-conn st-conn-' + S.connection + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646") + '</span></div>' +
+        '<button class="st-btn-ghost st-btn-small" data-st-act="logout" title="\u062E\u0631\u0648\u062C">\uD83D\uDEAA \u062E\u0631\u0648\u062C</button>' +
       '</div>' +
-      '<div class="st-profile-hero">' +
-        '<div class="st-profile-avatar st-avatar-' + esc(avatarKey) + '">' + _avatarInnerHTML(p) + '</div>' +
-        '<div class="st-profile-info">' +
-          '<div class="st-profile-name">' + esc(p.display_name) + '</div>' +
-          '<div class="st-profile-username">@' + esc(p.username) + '</div>' +
+      '<div class="st-hero st-hero-small"><h1>\u2699\uFE0F \u062D\u0633\u0627\u0628 \u0645\u0646</h1></div>' +
+      '<div class="st-account-hero">' +
+        '<div class="st-profile-avatar st-account-avatar st-avatar-' + esc(avatarKey) + '">' + _avatarInnerHTML(p) + '</div>' +
+        '<div class="st-account-id">' +
+          '<h2>' + esc(p.display_name) + '</h2>' +
+          '<div class="st-account-id-user">@' + esc(p.username) + '</div>' +
+          '<div class="st-account-id-meta">' +
+            (memberSince ? '<span>\uD83D\uDCC5 \u0639\u0636\u0648 \u0627\u0632 ' + esc(memberSince) + '</span>' : '') +
+            '<span>\u23F1 \u0627\u0645\u0631\u0648\u0632: ' + _fmtTimer(today) + '</span>' +
+            '<span>\uD83D\uDCC5 \u06F7 \u0631\u0648\u0632: ' + _fmtTimer(weekSec) + '</span>' +
+          '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="st-stats">' +
-        '<div class="st-stat"><span class="st-stat-ico">📊</span><div><div class="st-stat-val">' + _fmtTimer(today) + '</div><div class="st-stat-lbl">امروز</div></div></div>' +
-        '<div class="st-stat"><span class="st-stat-ico">📅</span><div><div class="st-stat-val">' + _fmtTimer(weekSec) + '</div><div class="st-stat-lbl">۷ روز</div></div></div>' +
-        '<div class="st-stat"><span class="st-stat-ico">📚</span><div><div class="st-stat-val">' + fa0((S.courses||[]).length) + '</div><div class="st-stat-lbl">درس</div></div></div>' +
-      '</div>' +
-      '<div class="st-members-title">آواتار</div>' +
+      identitySection +
+      securitySection +
+      privacySection +
+      '<div class="st-members-title">\uD83C\uDFA8 \u0622\u0648\u0627\u062A\u0627\u0631</div>' +
       _avatarUploadHTML() +
       _avatarPickerHTML(avatarKey) +
-      _renderSharePlanUI() +
-      '<div class="st-members-title">\u062F\u0631\u0628\u0627\u0631\u0647\u0654 \u0645\u0646</div>' +
+      '<div class="st-members-title">\uD83D\uDCDD \u062F\u0631\u0628\u0627\u0631\u0647\u0654 \u0645\u0646</div>' +
       '<div class="st-card st-settings-card"><textarea class="st-bio-edit" data-st-bio maxlength="200" rows="3" placeholder="\u062A\u0648\u0636\u06CC\u062D \u06A9\u0648\u062A\u0627\u0647">' + esc(p.bio || "") + '</textarea></div>' +
-      '<div class="st-members-title">حریم خصوصی</div>' +
-      '<div class="st-card st-settings-card">' +
-        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_daily_total"' + (shareDaily ? " checked" : "") + '><span class="st-settings-label">اشتراک مجموع مطالعهٔ امروز</span></label></div>' +
-        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_timeline"' + (shareTL ? " checked" : "") + '><span class="st-settings-label">اشتراک فعالیت Timeline</span></label></div>' +
-        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_course_breakdown"' + (shareBreak ? " checked" : "") + '><span class="st-settings-label">اشتراک تفکیک آمار درس‌ها</span></label></div>' +
-        '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_history_with_group"' + (shareHist ? " checked" : "") + '><span class="st-settings-label">اشتراک تاریخچه با گروه</span></label></div>' +
-        '<div class="st-settings-actions"><button class="st-btn-primary" data-st-act="profile-save" title="ذخیره">ذخیره</button></div>' +
-        '<div class="st-settings-status" data-st-settings-status aria-live="polite"></div>' +
-      '</div>' +
-      '<div class="st-actions-bar">' +
-        '<button class="st-btn-ghost" data-st-act="hist-open" title="تاریخچه">📜 تاریخچه</button>' +
-      '</div>'
+      groupSection
     );
     wire();
   }
@@ -2688,10 +3087,7 @@
       '</div>';
     }
     var inviteBlock = isOwner
-      ? '<div class="st-invite">🔗 کد دعوت: <code>' + esc(S.group.invite_code) + '</code>' +
-        '<button class="st-btn-ghost st-btn-small" data-st-act="copy-invite" title="کپی کد دعوت">کپی</button>' +
-        '<button class="st-btn-ghost st-btn-small" data-st-act="revoke" title="ساخت کد دعوت جدید">🔄 کد جدید</button>' +
-        '</div>'
+      ? '<div class="st-invite-compact">\uD83D\uDD12 \u06A9\u062F \u062F\u0639\u0648\u062A \u067E\u0646\u0647\u0627\u0646 \u0627\u0633\u062A \u2014 <button class="st-group-code-btn" data-st-act="nav-tab" data-st-tab="profile" style="margin:0 4px;">\u0645\u062F\u06CC\u0631\u06CC\u062A \u062F\u0631 \u062D\u0633\u0627\u0628 \u0645\u0646</button></div>'
       : "";
     var settingsBtn = '<button class="st-btn-ghost" data-st-act="settings" title="تنظیمات حریم خصوصی">⚙️ تنظیمات</button>';
     var historyBtn = '<button class="st-btn-ghost" data-st-act="hist-open" title="تاریخچهٔ مطالعه">📜 تاریخچه</button>';
@@ -2771,7 +3167,7 @@
     S.container.querySelectorAll("[data-st-act]").forEach(function (el) {
       if (el.tagName === "FORM") el.addEventListener("submit", onSubmit);
       else if (el.tagName === "SELECT") el.addEventListener("change", onSelect);
-    else if (el.tagName === "INPUT" && (el.getAttribute("data-st-act") === "avatar-file" || el.getAttribute("data-st-act") === "friend-day-set" || el.getAttribute("data-st-act") === "share-plan-toggle")) el.addEventListener("change", onSelect);
+    else if (el.tagName === "INPUT" && (el.getAttribute("data-st-act") === "avatar-file" || el.getAttribute("data-st-act") === "friend-day-set" || el.getAttribute("data-st-act") === "share-plan-toggle" || el.getAttribute("data-st-act") === "hist-from-date" || el.getAttribute("data-st-act") === "hist-to-date")) el.addEventListener("change", onSelect);
       else el.addEventListener("click", onClick);
     });
   }
@@ -2779,6 +3175,8 @@
     var t = e.target;
     if (!t || !t.getAttribute) return;
     var act = t.getAttribute("data-st-act");
+    if (act === "hist-from-date") { S.historyFromDate = t.value; render(); return; }
+    if (act === "hist-to-date") { S.historyToDate = t.value; render(); return; }
     if (act === "share-plan-toggle") { _handleSharePlanToggle(t.checked); return; }
     if (act === "avatar-file") {
       var _f = t.files && t.files[0];
@@ -2832,13 +3230,64 @@
     if (act === "hist-cancel") { _cancelHistoryForm(); return; }
     if (act === "hist-del-confirm") { _confirmDeleteHistory(); return; }
     if (act === "hist-del-cancel") { S.historyPendingDelete = null; render(); return; }
+    if (act === "cal-prev") { _histCalPrevMonth(); return; }
+    if (act === "cal-next") { _histCalNextMonth(); return; }
+    if (act === "cal-today") { _histCalGoToday(); return; }
+    if (act === "cal-day") {
+      var jy = parseInt(t.getAttribute("data-jy"), 10);
+      var jm = parseInt(t.getAttribute("data-jm"), 10);
+      var jd = parseInt(t.getAttribute("data-jd"), 10);
+      if (jy && jm && jd) _histCalSelectDay(jy, jm, jd);
+      return;
+    }
+    if (act === "hist-apply-range") {
+      var f = S.container.querySelector('[data-st-act="hist-from-date"]');
+      var to = S.container.querySelector('[data-st-act="hist-to-date"]');
+      if (!f || !to) return;
+      if (!f.value || !to.value) { S.historyError = "\u0647\u0631 \u062F\u0648 \u062A\u0627\u0631\u06CC\u062E \u0644\u0627\u0632\u0645 \u0627\u0633\u062A"; render(); return; }
+      S.historyFromDate = f.value;
+      S.historyToDate = to.value;
+      S.historySessions = null;
+      S.historyError = null;
+      render();
+      _loadHistory().then(function () { render(); });
+      return;
+    }
+    if (act === "hist-expand") {
+      var hid = t.getAttribute("data-hist-id");
+      S.histExpanded = (S.histExpanded === hid) ? null : hid;
+      render();
+      return;
+    }
     if (act === "hist-range") {
-      var rd = parseInt(t.getAttribute("data-range"), 10);
-      if (rd && rd !== S.historyRangeDays) {
-        S.historyRangeDays = rd;
+      var rd = t.getAttribute("data-range");
+      if (rd === "custom") {
+        S.historyRangeMode = "custom";
+        if (!S.historyFromDate || !S.historyToDate) {
+          var today = new Date();
+          var iso30 = new Date(); iso30.setDate(iso30.getDate() - 29);
+          S.historyFromDate = iso30.getFullYear() + "-" + ((iso30.getMonth()+1<10?"0":"")+(iso30.getMonth()+1)) + "-" + ((iso30.getDate()<10?"0":"")+iso30.getDate());
+          S.historyToDate = today.getFullYear() + "-" + ((today.getMonth()+1<10?"0":"")+(today.getMonth()+1)) + "-" + ((today.getDate()<10?"0":"")+today.getDate());
+        }
+        render();
+        return;
+      }
+      var rdN = parseInt(rd, 10);
+      if (rdN && rdN !== S.historyRangeDays) {
+        S.historyRangeDays = rdN;
+        S.historyRangeMode = "shortcut";
+        S.historyFromDate = null;
+        S.historyToDate = null;
         S.historySessions = null;
         S.historyDayFilter = null;
         S.historyError = null;
+        render();
+        _loadHistory().then(function () { if (S.readyView === "history") render(); });
+      } else if (rdN === S.historyRangeDays && S.historyRangeMode !== "shortcut") {
+        S.historyRangeMode = "shortcut";
+        S.historyFromDate = null;
+        S.historyToDate = null;
+        S.historySessions = null;
         render();
         _loadHistory().then(function () { if (S.readyView === "history") render(); });
       }
@@ -2888,6 +3337,12 @@
     if (act === "course-archive") { var _ar = t.getAttribute("data-course-id"); if (_ar && confirm("\u0622\u0631\u0634\u06CC\u0648 \u0634\u0648\u062F\u061F")) _archiveCourse(_ar); return; }
     if (act === "course-delete") { var _dc = t.getAttribute("data-course-id"); if (_dc && confirm("درس حذف شود؟ جلسات مرتبط باقی می‌مانند اما «بدون درس» می‌شوند.")) _deleteCourse(_dc); return; }
     if (act === "profile-save") { doSaveProfile(); return; }
+    if (act === "account-save-identity") { _saveIdentity(); return; }
+    if (act === "account-save-privacy") { _savePrivacy(); return; }
+    if (act === "account-change-email") { _changeEmail(); return; }
+    if (act === "account-change-password") { _changePassword(); return; }
+    if (act === "account-toggle-pass") { _togglePasswordVisibility(t); return; }
+    if (act === "invite-toggle") { _toggleInviteVisibility(); return; }
     if (act === "avatar-remove") { _avatarRemove(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
     if (act === "member-open-profile") { _openMemberProfile(t.getAttribute("data-member-id")); return; }
@@ -3095,9 +3550,9 @@
     S.readyView = "main"; S.onBreak = false; S.todaySessionCount = 0; S.lastSessionEndedAt = null;
     S.historySessions = null; S.historyView = "list"; S.historyEdit = null; S.historyError = null; S.historySaving = false; S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
-    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null;
+    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null; S.inviteVisible = false; S.accountBusy = { identity: false, privacy: false, password: false, email: false }; S.accountErr = { identity: null, privacy: null, password: null, email: null }; S.accountOk = { identity: null, privacy: null, password: null, email: null };
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
-    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
     S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
     render();
@@ -3146,9 +3601,9 @@
     S.historySaving = false;
     S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
-    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null;
+    S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null; S.inviteVisible = false; S.accountBusy = { identity: false, privacy: false, password: false, email: false }; S.accountErr = { identity: null, privacy: null, password: null, email: null }; S.accountOk = { identity: null, privacy: null, password: null, email: null };
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
-    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
     S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
   };

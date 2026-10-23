@@ -30831,3 +30831,346 @@ html body input.r21-manage-settings-input:focus-visible {
 }
 
 /* [END PATCH:study-together-w6] */
+/* [PATCH:study-together-w7] - Account Center + Persian Calendar + Rich History */
+
+/* ─── Account Center ─── */
+.st-page .st-account-hero {
+  display: flex; align-items: center; gap: 16px;
+  padding: 20px 18px; margin: 4px 0 16px;
+  background: radial-gradient(120% 100% at 0% 0%, rgba(99,102,241,0.20), transparent 55%),
+              radial-gradient(120% 100% at 100% 100%, rgba(139,92,246,0.14), transparent 55%),
+              linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border: 1px solid var(--st-border-mid, rgba(255,255,255,0.10));
+  border-radius: var(--st-radius-lg, 18px);
+  box-shadow: var(--st-shadow-md, 0 6px 20px rgba(0,0,0,0.25));
+}
+.st-page .st-account-avatar {
+  width: 84px; height: 84px; font-size: 32px; font-weight: 800;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  border: 3px solid rgba(255,255,255,0.9);
+}
+.st-page .st-account-id { flex: 1; min-width: 0; }
+.st-page .st-account-id h2 {
+  margin: 0 0 2px; font-size: 20px; font-weight: 700;
+}
+.st-page .st-account-id-user {
+  font-size: 13px; opacity: 0.65; margin-bottom: 4px;
+}
+.st-page .st-account-id-meta {
+  display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; opacity: 0.7;
+}
+.st-page .st-account-id-meta span {
+  padding: 1px 8px; border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+}
+
+.st-page .st-account-section {
+  padding: 16px 18px; margin: 10px 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+  border: 1px solid var(--st-border-soft, rgba(255,255,255,0.06));
+  border-radius: var(--st-radius-lg, 18px);
+}
+.st-page .st-account-section-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 12px; margin-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.st-page .st-account-section-icon {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  border-radius: 8px;
+  background: rgba(99,102,241,0.18);
+  border: 1px solid rgba(99,102,241,0.35);
+}
+.st-page .st-account-section-title {
+  font-size: 14px; font-weight: 700;
+}
+.st-page .st-account-section-desc {
+  font-size: 11px; opacity: 0.6; margin-top: 2px;
+}
+
+.st-page .st-account-field {
+  margin: 10px 0;
+}
+.st-page .st-account-field label {
+  display: block;
+  font-size: 12px; font-weight: 600; opacity: 0.8;
+  margin-bottom: 5px;
+}
+.st-page .st-account-field input {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.30);
+  border: 1px solid var(--st-border-mid, rgba(255,255,255,0.10));
+  border-radius: var(--st-radius-sm, 8px);
+  color: inherit; font-family: inherit; font-size: 13px;
+  transition: border-color 180ms, box-shadow 180ms;
+}
+.st-page .st-account-field input:focus {
+  border-color: rgba(99,102,241,0.55);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+  outline: none;
+}
+.st-page .st-account-field input:disabled { opacity: 0.55; cursor: not-allowed; }
+.st-page .st-account-field-hint {
+  font-size: 11px; opacity: 0.55; margin-top: 4px;
+}
+
+.st-page .st-password-wrap {
+  position: relative;
+}
+.st-page .st-password-wrap input { padding-inline-end: 42px; }
+.st-page .st-password-toggle {
+  position: absolute;
+  top: 50%; inset-inline-end: 6px;
+  transform: translateY(-50%);
+  width: 30px; height: 30px;
+  background: transparent; border: none; color: inherit; cursor: pointer;
+  border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0.7;
+  font-family: inherit;
+}
+.st-page .st-password-toggle:hover { opacity: 1; background: rgba(255,255,255,0.06); }
+
+.st-page .st-account-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding-top: 12px; margin-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  justify-content: flex-end;
+}
+.st-page .st-account-status {
+  font-size: 12px; min-height: 16px;
+  margin-top: 8px; text-align: end;
+  opacity: 0.85;
+}
+.st-page .st-account-status.is-ok { color: rgba(52,211,153,1); }
+.st-page .st-account-status.is-err { color: rgba(239,68,68,1); }
+
+/* ─── Group invite code (masked) ─── */
+.st-page .st-group-code-wrap {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 14px; margin: 8px 0;
+  background: linear-gradient(90deg, rgba(99,102,241,0.10), rgba(139,92,246,0.04));
+  border: 1px solid rgba(99,102,241,0.32);
+  border-radius: var(--st-radius-md, 12px);
+}
+.st-page .st-group-code-label {
+  font-size: 12px; font-weight: 600; opacity: 0.8;
+  margin-inline-end: 4px;
+}
+.st-page .st-group-code-value {
+  font-family: 'Courier New', monospace;
+  font-size: 14px; letter-spacing: 2px; font-weight: 600;
+  padding: 4px 10px;
+  background: rgba(0,0,0,0.30);
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+  user-select: all;
+}
+.st-page .st-group-code-value.is-masked {
+  letter-spacing: 4px; opacity: 0.55;
+}
+.st-page .st-group-code-btn {
+  padding: 5px 10px; font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--st-border-mid, rgba(255,255,255,0.10));
+  border-radius: 6px;
+  color: inherit; cursor: pointer; font-family: inherit;
+  transition: background 150ms, border-color 150ms;
+}
+.st-page .st-group-code-btn:hover { background: rgba(255,255,255,0.05); border-color: var(--st-border-hi, rgba(255,255,255,0.16)); }
+
+.st-page .st-invite-compact {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin: 6px 0 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed var(--st-border-soft, rgba(255,255,255,0.06));
+  border-radius: var(--st-radius-sm, 8px);
+  font-size: 12px; opacity: 0.8;
+}
+
+/* ─── Persian Calendar (used by JS-B; defined here for style cohesion) ─── */
+.st-page .st-cal-wrap {
+  padding: 14px 14px 16px; margin: 10px 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.012));
+  border: 1px solid var(--st-border-soft, rgba(255,255,255,0.06));
+  border-radius: var(--st-radius-lg, 18px);
+}
+.st-page .st-cal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 12px;
+}
+.st-page .st-cal-title {
+  font-size: 15px; font-weight: 700;
+  text-align: center; flex: 1;
+}
+.st-page .st-cal-nav-btn {
+  width: 32px; height: 32px;
+  background: transparent;
+  border: 1px solid var(--st-border-mid, rgba(255,255,255,0.10));
+  border-radius: 8px;
+  color: inherit; cursor: pointer; font-family: inherit;
+  font-size: 14px;
+  transition: background 150ms, border-color 150ms;
+}
+.st-page .st-cal-nav-btn:hover { background: rgba(255,255,255,0.06); border-color: var(--st-border-hi, rgba(255,255,255,0.16)); }
+.st-page .st-cal-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.st-page .st-cal-today-btn {
+  padding: 5px 12px; font-size: 12px;
+  background: rgba(99,102,241,0.15);
+  border: 1px solid rgba(99,102,241,0.4);
+  border-radius: 6px;
+  color: inherit; cursor: pointer; font-family: inherit;
+  transition: background 150ms;
+}
+.st-page .st-cal-today-btn:hover { background: rgba(99,102,241,0.25); }
+
+.st-page .st-cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.st-page .st-cal-dow {
+  font-size: 10px; opacity: 0.55;
+  text-align: center; font-weight: 600;
+  padding: 4px 0;
+}
+.st-page .st-cal-cell {
+  aspect-ratio: 1 / 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-size: 12px; font-variant-numeric: tabular-nums;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(255,255,255,0.03);
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: transform 140ms, background 180ms, border-color 180ms;
+  padding: 0;
+  font-family: inherit;
+}
+.st-page .st-cal-cell.is-empty { visibility: hidden; pointer-events: none; }
+.st-page .st-cal-cell:hover:not(.is-empty):not(.is-disabled) { transform: translateY(-1px); background: rgba(255,255,255,0.07); }
+.st-page .st-cal-cell.is-disabled { opacity: 0.35; cursor: not-allowed; }
+.st-page .st-cal-cell.is-today {
+  border-color: rgba(99,102,241,0.6);
+  font-weight: 700;
+}
+.st-page .st-cal-cell.is-selected {
+  background: linear-gradient(180deg, rgba(99,102,241,0.35), rgba(99,102,241,0.18));
+  border-color: rgba(99,102,241,0.75);
+  box-shadow: 0 2px 10px rgba(99,102,241,0.30);
+}
+.st-page .st-cal-cell.has-data::after {
+  content: ""; position: absolute;
+  bottom: 3px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: rgba(52,211,153,0.9);
+  box-shadow: 0 0 4px rgba(52,211,153,0.6);
+}
+.st-page .st-cal-cell.has-data.is-heavy::after {
+  background: rgba(52,211,153,1); width: 6px; height: 6px;
+  box-shadow: 0 0 8px rgba(52,211,153,0.9);
+}
+.st-page .st-cal-summary {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding-top: 10px; margin-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 11px; opacity: 0.75;
+}
+.st-page .st-cal-summary strong { color: rgba(99,102,241,0.95); }
+
+/* ─── History row v2 (icon + status + expand) ─── */
+.st-page .st-hist-row-v2 {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 12px; align-items: center;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: var(--st-radius-md, 12px);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 180ms, border-color 180ms, transform 140ms;
+}
+.st-page .st-hist-row-v2:hover { background: rgba(255,255,255,0.05); border-color: var(--st-border-mid, rgba(255,255,255,0.10)); transform: translateY(-1px); }
+.st-page .st-hist-course-icon {
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  font-size: 18px;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
+}
+.st-page .st-hist-row-body { min-width: 0; flex: 1; }
+.st-page .st-hist-row-title {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.st-page .st-hist-row-course {
+  font-size: 13px; font-weight: 600;
+}
+.st-page .st-hist-row-course.is-none { opacity: 0.65; }
+.st-page .st-hist-row-meta {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  font-size: 11px; opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+.st-page .st-hist-row-dur-big {
+  font-size: 15px; font-weight: 700;
+  color: rgba(99,102,241,0.95);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.st-page .st-hist-row-expand {
+  grid-column: 1 / -1;
+  margin-top: 6px; padding: 10px 12px;
+  background: rgba(0,0,0,0.25);
+  border-radius: var(--st-radius-sm, 8px);
+  border: 1px solid var(--st-border-soft, rgba(255,255,255,0.06));
+  font-size: 11px;
+  display: flex; gap: 14px; flex-wrap: wrap;
+}
+.st-page .st-hist-row-expand dl {
+  margin: 0; display: flex; gap: 6px; align-items: baseline;
+}
+.st-page .st-hist-row-expand dt { opacity: 0.6; }
+.st-page .st-hist-row-expand dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.st-page .st-hist-actions-v2 {
+  display: flex; gap: 4px;
+  flex-shrink: 0;
+}
+.st-page .st-hist-badge-v2 {
+  font-size: 10px; padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-page .st-cal-cell,
+  .st-page .st-hist-row-v2,
+  .st-page .st-cal-nav-btn,
+  .st-page .st-cal-today-btn,
+  .st-page .st-group-code-btn,
+  .st-page .st-password-toggle,
+  .st-page .st-account-field input { transition: none !important; }
+  .st-page .st-cal-cell:hover:not(.is-empty) { transform: none; }
+  .st-page .st-hist-row-v2:hover { transform: none; }
+}
+
+@media (max-width: 600px) {
+  .st-page .st-account-hero { padding: 14px; gap: 12px; }
+  .st-page .st-account-avatar { width: 64px; height: 64px; font-size: 24px; }
+  .st-page .st-account-id h2 { font-size: 17px; }
+  .st-page .st-account-section { padding: 12px 14px; }
+  .st-page .st-cal-wrap { padding: 10px 10px 12px; }
+  .st-page .st-cal-cell { font-size: 11px; }
+  .st-page .st-hist-row-v2 { grid-template-columns: 36px 1fr auto; gap: 8px; }
+  .st-page .st-hist-course-icon { width: 34px; height: 34px; font-size: 15px; }
+  .st-page .st-group-code-value { font-size: 12px; letter-spacing: 1px; }
+}
+
+/* [END PATCH:study-together-w7] */

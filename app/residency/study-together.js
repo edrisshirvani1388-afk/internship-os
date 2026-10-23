@@ -143,7 +143,7 @@
   }
   function qGetProfiles(uids) {
     if (!uids.length) return Promise.resolve([]);
-    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key").in("id", uids).then(function (r) { return r.data || []; });
+    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio").in("id", uids).then(function (r) { return r.data || []; });
   }
   function qGetTodaySessions(gid) {
     var startIso = new Date(_startOfTodayLocalMs()).toISOString();
@@ -599,6 +599,12 @@
     var saveBtn = S.container.querySelector('[data-st-act="profile-save"]');
     var get = function (k) { var el = S.container.querySelector('[data-st-setting="' + k + '"]'); return el ? !!el.checked : false; };
     var _newAvatar = S.avatarPick || (S.profile && S.profile.avatar_key) || "av-1";
+    var bioEl = S.container.querySelector('[data-st-bio]');
+    var _newBio = bioEl ? String(bioEl.value || "").trim() : null;
+    if (_newBio !== null && _newBio.length > 200) {
+      if (statusEl) statusEl.textContent = "\u062D\u062F\u0627\u06A9\u062B\u0631 \u06F2\u06F0\u06F0";
+      return;
+    }
     var patch = {
       share_daily_total: get("share_daily_total"),
       share_timeline: get("share_timeline"),
@@ -607,6 +613,7 @@
       avatar_key: _newAvatar,
       updated_at: new Date().toISOString()
     };
+    if (_newBio !== null) patch.bio = (_newBio || null);
     if (statusEl) statusEl.textContent = "در حال ذخیره...";
     if (saveBtn) saveBtn.disabled = true;
     _sb.from("profiles").update(patch).eq("id", S.user.id).then(function (r) {
@@ -618,6 +625,7 @@
         S.profile.share_course_breakdown = patch.share_course_breakdown;
         S.profile.share_history_with_group = patch.share_history_with_group;
         S.profile.avatar_key = patch.avatar_key;
+        if (patch.bio !== undefined) S.profile.bio = patch.bio;
       }
       S.avatarPick = null;
       if (statusEl) statusEl.textContent = "ذخیره شد";
@@ -1007,15 +1015,17 @@
   }
   function _courseChipsHTML() {
     var all = S.courses || [];
-    var chip0 = '<button class="st-course-chip' + (!S.selectedCourseId ? " is-active" : "") + '" data-st-act="select-course" data-course-id="" title="بدون درس">بدون درس</button>';
+    var chip0 = '<button class="st-course-chip' + (!S.selectedCourseId ? " is-active" : "") + '" data-st-act="select-course" data-course-id="" title="\u0628\u062F\u0648\u0646 \u062F\u0631\u0633">\u0628\u062F\u0648\u0646 \u062F\u0631\u0633</button>';
     var chips = all.map(function (c) {
       var active = c.id === S.selectedCourseId ? " is-active" : "";
-      var colorCls = "st-course-" + (c.color || "st-course-1").replace("st-course-", "");
-      return '<button class="st-course-chip ' + _courseColorClass(c) + active + '" data-st-act="select-course" data-course-id="' + esc(c.id) + '">' +
-        '<span class="st-course-dot"></span>' + esc(c.name) +
-      '</button>';
+      return '<div class="st-chip-wrap">' +
+        '<button class="st-course-chip ' + _courseColorClass(c) + active + '" data-st-act="select-course" data-course-id="' + esc(c.id) + '">' +
+          '<span class="st-course-dot"></span>' + esc(c.name) +
+        '</button>' +
+        '<button class="st-chip-edit" data-st-act="course-edit" data-course-id="' + esc(c.id) + '" title="\u0648\u06CC\u0631\u0627\u06CC\u0634" aria-label="\u0648\u06CC\u0631\u0627\u06CC\u0634 \u062F\u0631\u0633">\u270E</button>' +
+      '</div>';
     }).join("");
-    var addBtn = '<button class="st-course-chip st-course-add" data-st-act="course-add" title="افزودن درس">+ درس جدید</button>';
+    var addBtn = '<button class="st-course-chip st-course-add" data-st-act="course-add" title="\u0627\u0641\u0632\u0648\u062F\u0646 \u062F\u0631\u0633">+ \u062F\u0631\u0633 \u062C\u062F\u06CC\u062F</button>';
     return '<div class="st-course-bar">' + chip0 + chips + addBtn + '</div>';
   }
   function _courseFormRender() {
@@ -1046,6 +1056,7 @@
         '<div class="st-form-actions">' +
           '<button type="submit" class="st-btn-primary"' + (S.courseSaving ? " disabled" : "") + '>' + (S.courseSaving ? "..." : "ذخیره") + '</button>' +
           '<button type="button" class="st-btn-ghost" data-st-act="course-cancel">انصراف</button>' +
+          (isEdit ? '<button type="button" class="st-btn-ghost" data-st-act="course-archive" data-course-id="' + esc(c.id) + '">\uD83D\uDCE6 \u0622\u0631\u0634\u06CC\u0648</button>' : "") +
           (isEdit ? '<button type="button" class="st-btn-danger" data-st-act="course-delete" data-course-id="' + esc(c.id) + '">حذف</button>' : "") +
         '</div>' +
         (S.courseError ? '<div class="st-error">' + esc(S.courseError) + '</div>' : "") +
@@ -1075,6 +1086,27 @@
       S.courseError = null;
       return _loadCourses().then(function () {
         try { notify("success", "درس ذخیره شد"); } catch (e) {}
+        render();
+      });
+    }).catch(function (err) {
+      S.courseSaving = false;
+      S.courseError = String(err && err.message || err);
+      render();
+    });
+  }
+  function _archiveCourse(id) {
+    if (!S.user || !_sb) return;
+    S.courseSaving = true;
+    S.courseError = null;
+    render();
+    qUpdateCourse(id, S.user.id, { archived_at: new Date().toISOString(), updated_at: new Date().toISOString() }).then(function (r) {
+      if (r && r.error) throw r.error;
+      if (!r || !r.data) throw new Error("archive_failed");
+      S.courseSaving = false;
+      S.courseEdit = null;
+      S.readyView = "main";
+      return _loadCourses().then(function () {
+        try { notify("success", "\u0622\u0631\u0634\u06CC\u0648 \u0634\u062F"); } catch (e) {}
         render();
       });
     }).catch(function (err) {
@@ -1147,6 +1179,8 @@
       '</div>' +
       '<div class="st-members-title">آواتار</div>' +
       _avatarPickerHTML(avatarKey) +
+      '<div class="st-members-title">\u062F\u0631\u0628\u0627\u0631\u0647\u0654 \u0645\u0646</div>' +
+      '<div class="st-card st-settings-card"><textarea class="st-bio-edit" data-st-bio maxlength="200" rows="3" placeholder="\u062A\u0648\u0636\u06CC\u062D \u06A9\u0648\u062A\u0627\u0647">' + esc(p.bio || "") + '</textarea></div>' +
       '<div class="st-members-title">حریم خصوصی</div>' +
       '<div class="st-card st-settings-card">' +
         '<div class="st-settings-row"><label class="st-settings-label-wrap"><input type="checkbox" data-st-setting="share_daily_total"' + (shareDaily ? " checked" : "") + '><span class="st-settings-label">اشتراک مجموع مطالعهٔ امروز</span></label></div>' +
@@ -1638,6 +1672,7 @@
           '<div class="st-profile-info">' +
             '<div class="st-profile-name">' + esc(view.display_name) + '</div>' +
             '<div class="st-profile-username">@' + esc(view.username) + '</div>' +
+            (view.bio ? '<div class="st-profile-bio">' + esc(view.bio) + '</div>' : '') +
           '</div>' +
         '</div>' +
         body +
@@ -1904,7 +1939,7 @@
                     display_name: pr.display_name || "?", username: pr.username || "?",
                     share_timeline: !!pr.share_timeline, share_daily_total: !!pr.share_daily_total,
                     share_course_breakdown: !!pr.share_course_breakdown, share_history_with_group: !!pr.share_history_with_group,
-                    avatar_key: pr.avatar_key || "av-1" };
+                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null };
                 });
                 recomputeTodayTotal(todaySessions);
                 return qFindOwnOpenSession(S.user.id, g.id).then(function (open) {
@@ -2341,8 +2376,10 @@
       return;
     }
     if (act === "select-course") { S.selectedCourseId = t.getAttribute("data-course-id") || null; render(); return; }
+    if (act === "course-edit") { var _ec = t.getAttribute("data-course-id"); var _cc = _courseById(_ec); if (_cc) { S.courseEdit = _cc; S.courseError = null; S.readyView = "course-form"; render(); } return; }
     if (act === "course-add") { S.courseEdit = null; S.courseError = null; S.readyView = "course-form"; render(); return; }
     if (act === "course-cancel") { S.courseEdit = null; S.courseError = null; S.readyView = "main"; render(); return; }
+    if (act === "course-archive") { var _ar = t.getAttribute("data-course-id"); if (_ar && confirm("\u0622\u0631\u0634\u06CC\u0648 \u0634\u0648\u062F\u061F")) _archiveCourse(_ar); return; }
     if (act === "course-delete") { var _dc = t.getAttribute("data-course-id"); if (_dc && confirm("درس حذف شود؟ جلسات مرتبط باقی می‌مانند اما «بدون درس» می‌شوند.")) _deleteCourse(_dc); return; }
     if (act === "profile-save") { doSaveProfile(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }

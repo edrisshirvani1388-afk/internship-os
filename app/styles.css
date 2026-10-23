@@ -29752,3 +29752,220 @@ html body input.r21-manage-settings-input:focus-visible {
 }
 
 /* [END PATCH:study-together-w1-final] */
+/* [PATCH:study-together-w2a] - Statistics: period pills, line chart, per-course */
+
+.st-period-pills {
+  display: flex; gap: 6px; margin: 8px 0 14px;
+  padding: 4px;
+  background: var(--st-ds-bg-1);
+  border: 1px solid var(--st-ds-border);
+  border-radius: 999px;
+  width: fit-content;
+}
+.st-period-pill {
+  padding: 6px 14px; border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit; cursor: pointer;
+  font-family: inherit; font-size: 13px;
+  transition: background 150ms, color 150ms;
+}
+.st-period-pill:hover { background: rgba(255,255,255,0.04); }
+.st-period-pill.is-active {
+  background: rgba(99,102,241,0.22);
+  border-color: rgba(99,102,241,0.5);
+  font-weight: 600;
+}
+
+.st-chart-card {
+  padding: 12px 14px; margin: 8px 0 14px;
+  background: var(--st-ds-bg-1);
+  border: 1px solid var(--st-ds-border);
+  border-radius: var(--st-ds-radius-lg);
+}
+.st-line-chart { width: 100%; height: 180px; display: block; margin-top: 6px; }
+
+.st-course-stat { margin: 10px 0; }
+.st-course-stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px;
+}
+.st-course-stat-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px;
+}
+.st-course-stat-val {
+  font-size: 13px; font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.st-course-stat-bar {
+  height: 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.st-course-stat-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 300ms ease-out;
+}
+.st-course-stat-fill.st-course-1 { background: var(--st-course-1); }
+.st-course-stat-fill.st-course-2 { background: var(--st-course-2); }
+.st-course-stat-fill.st-course-3 { background: var(--st-course-3); }
+.st-course-stat-fill.st-course-4 { background: var(--st-course-4); }
+.st-course-stat-fill.st-course-5 { background: var(--st-course-5); }
+.st-course-stat-fill.st-course-6 { background: var(--st-course-6); }
+.st-course-stat-fill.st-course-7 { background: var(--st-course-7); }
+.st-course-stat-fill.st-course-8 { background: var(--st-course-8); }
+.st-course-stat-fill.st-course-none { background: rgba(148,163,184,0.5); }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-period-pill, .st-course-stat-fill { transition: none !important; }
+}
+
+@media (max-width: 600px) {
+  .st-period-pills { flex-wrap: wrap; border-radius: 12px; }
+  .st-period-pill { padding: 5px 10px; font-size: 12px; }
+  .st-line-chart { height: 140px; }
+}
+
+/* [END PATCH:study-together-w2a] */
+/* [PATCH:study-together-w2b] - History heatmap + range pills + course filter */
+
+.st-hist-range-pills {
+  display: flex; gap: 4px; margin: 8px 0 10px;
+  padding: 4px; width: fit-content;
+  background: var(--st-ds-bg-1);
+  border: 1px solid var(--st-ds-border);
+  border-radius: 999px;
+}
+.st-hist-range-pill {
+  padding: 5px 12px; border-radius: 999px;
+  background: transparent; border: 1px solid transparent;
+  color: inherit; cursor: pointer;
+  font-family: inherit; font-size: 12px;
+  transition: background 150ms;
+}
+.st-hist-range-pill:hover { background: rgba(255,255,255,0.04); }
+.st-hist-range-pill.is-active {
+  background: rgba(99,102,241,0.22);
+  border-color: rgba(99,102,241,0.5);
+  font-weight: 600;
+}
+
+.st-hist-filters {
+  display: flex; gap: 8px; align-items: center;
+  margin: 0 0 12px; flex-wrap: wrap;
+}
+.st-hist-course-filter {
+  padding: 6px 10px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.2);
+  color: inherit;
+  font-family: inherit; font-size: 13px;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.st-hist-heatmap {
+  padding: 12px 14px; margin: 0 0 12px;
+  background: var(--st-ds-bg-1);
+  border: 1px solid var(--st-ds-border);
+  border-radius: var(--st-ds-radius-lg);
+}
+.st-hm-headers {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 3px; margin-bottom: 4px;
+}
+.st-hm-dow {
+  font-size: 10px; opacity: 0.5;
+  text-align: center; font-weight: 600;
+}
+.st-hm-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.st-hm-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: rgba(255,255,255,0.04);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms, border-color 120ms;
+}
+.st-hm-cell.is-empty { background: transparent; cursor: default; pointer-events: none; border: none; }
+.st-hm-cell:hover:not(.is-empty) { transform: scale(1.15); }
+.st-hm-cell.st-hm-l1 { background: rgba(99,102,241,0.22); }
+.st-hm-cell.st-hm-l2 { background: rgba(99,102,241,0.42); }
+.st-hm-cell.st-hm-l3 { background: rgba(99,102,241,0.68); }
+.st-hm-cell.st-hm-l4 { background: rgba(99,102,241,0.95); }
+.st-hm-cell.is-active {
+  border-color: rgba(255,255,255,0.95);
+  box-shadow: 0 0 6px rgba(255,255,255,0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-hist-range-pill, .st-hm-cell { transition: none !important; }
+  .st-hm-cell:hover:not(.is-empty) { transform: none; }
+}
+
+@media (max-width: 600px) {
+  .st-hm-grid, .st-hm-headers { gap: 2px; }
+  .st-hist-course-filter { min-width: 100px; font-size: 12px; }
+}
+
+/* [END PATCH:study-together-w2b] */
+/* [PATCH:study-together-w2c] - Stats: top days, best session, course breakdown */
+
+.st-topdays { display: flex; flex-direction: column; gap: 8px; }
+.st-topday {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.st-topday-rank {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px;
+  background: rgba(99,102,241,0.22);
+  border: 1px solid rgba(99,102,241,0.5);
+  flex-shrink: 0;
+}
+.st-topday:nth-child(1) .st-topday-rank { background: rgba(245,158,11,0.25); border-color: rgba(245,158,11,0.55); }
+.st-topday-info { flex: 1; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.st-topday-date { font-size: 13px; opacity: 0.85; }
+.st-topday-dur { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: rgba(99,102,241,1); }
+
+.st-bestsession {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04));
+  border-radius: 10px;
+  border: 1px solid rgba(245,158,11,0.35);
+}
+.st-bestsession-dur {
+  font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: rgba(245,158,11,1);
+  text-shadow: 0 0 12px rgba(245,158,11,0.3);
+  flex-shrink: 0;
+}
+.st-bestsession-meta { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.st-bestsession-when { font-size: 12px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+.st-hist-more {
+  font-size: 11px; opacity: 0.6; text-align: center;
+  padding: 6px 0; margin-top: 4px;
+  border-top: 1px dashed rgba(255,255,255,0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-topday, .st-bestsession { transition: none !important; }
+}
+
+@media (max-width: 600px) {
+  .st-topday-info { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .st-bestsession { flex-direction: column; align-items: flex-start; }
+}
+
+/* [END PATCH:study-together-w2c] */

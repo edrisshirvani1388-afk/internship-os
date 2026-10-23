@@ -26,7 +26,9 @@
     pom: null,
     historySessions: null, historyView: "list", historyEdit: null, historyError: null, historySaving: false, historyPendingDelete: null,
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
-    avatarPick: null
+    avatarPick: null,
+    statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
+    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null
   };
 
   var _sb = null, _config = null, _sdkPromise = null;
@@ -575,8 +577,9 @@
   }
   function _loadHistory() {
     if (!S.user || !S.group) return Promise.resolve();
-    var startD = new Date(); startD.setDate(startD.getDate() - 6); startD.setHours(0, 0, 0, 0);
+    var days = S.historyRangeDays || 7;
     var endD = new Date(); endD.setDate(endD.getDate() + 1); endD.setHours(0, 0, 0, 0);
+    var startD = new Date(endD); startD.setDate(startD.getDate() - days);
     return qGetRangeSessions(S.user.id, S.group.id, startD.toISOString(), endD.toISOString())
       .then(function (rows) { S.historySessions = rows; })
       .catch(function (err) { S.historyError = String(err && err.message || err); S.historySessions = []; });
@@ -777,21 +780,127 @@
       '<div class="st-hist-row-actions">' + actions + '</div>' +
     '</div>';
   }
+  function _filteredHistorySessions() {
+    var arr = S.historySessions || [];
+    var cf = S.historyCourseFilter;
+    var df = S.historyDayFilter;
+    return arr.filter(function (s) {
+      if (cf) {
+        if (cf === "__none") { if (s.course_id) return false; }
+        else if (s.course_id !== cf) return false;
+      }
+      if (df) {
+        var st = new Date(s.started_at);
+        var k = st.getFullYear() + "-" + (st.getMonth() + 1) + "-" + st.getDate();
+        if (k !== df) return false;
+      }
+      return true;
+    });
+  }
+  function _histSessionsForHeatmap() {
+    var arr = S.historySessions || [];
+    var cf = S.historyCourseFilter;
+    if (!cf) return arr;
+    return arr.filter(function (s) {
+      if (cf === "__none") return !s.course_id;
+      return s.course_id === cf;
+    });
+  }
+  function _renderHistRangePills() {
+    var opts = [
+      { id: 7, label: "۷ روز" },
+      { id: 30, label: "۳۰ روز" },
+      { id: 90, label: "۹۰ روز" }
+    ];
+    return '<div class="st-hist-range-pills">' + opts.map(function (o) {
+      var cls = "st-hist-range-pill" + (S.historyRangeDays === o.id ? " is-active" : "");
+      return '<button type="button" class="' + cls + '" data-st-act="hist-range" data-range="' + o.id + '">' + o.label + '</button>';
+    }).join("") + '</div>';
+  }
+  function _renderHistCourseFilter() {
+    var cf = S.historyCourseFilter || "";
+    var opts = '<option value=""' + (cf === "" ? " selected" : "") + '>همهٔ درس‌ها</option>' +
+               '<option value="__none"' + (cf === "__none" ? " selected" : "") + '>بدون درس</option>';
+    (S.courses || []).forEach(function (c) {
+      opts += '<option value="' + esc(c.id) + '"' + (cf === c.id ? " selected" : "") + '>' + esc(c.name) + '</option>';
+    });
+    return '<select class="st-hist-course-filter" data-st-act="hist-course-filter" title="فیلتر درس">' + opts + '</select>';
+  }
+  function _renderHistHeatmap() {
+    var days = S.historyRangeDays || 7;
+    var now = new Date(); now.setHours(0, 0, 0, 0);
+    var start = new Date(now); start.setDate(start.getDate() - (days - 1));
+    var buckets = {};
+    for (var i = 0; i < days; i++) {
+      var d = new Date(start); d.setDate(d.getDate() + i);
+      var k = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+      buckets[k] = { date: d, sec: 0, count: 0, key: k };
+    }
+    _histSessionsForHeatmap().forEach(function (s) {
+      if (!s.ended_at || s.end_reason === "crash") return;
+      var st = new Date(s.started_at);
+      var k = st.getFullYear() + "-" + (st.getMonth() + 1) + "-" + st.getDate();
+      if (!buckets[k]) return;
+      var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st.getTime()) / 1000));
+      buckets[k].sec += dur;
+      buckets[k].count++;
+    });
+    var max = 0;
+    Object.keys(buckets).forEach(function (k) { if (buckets[k].sec > max) max = buckets[k].sec; });
+    if (max === 0) max = 1;
+    var keys = Object.keys(buckets).sort();
+    var leadingEmpty = ((start.getDay() + 1) % 7);
+    var emptyCells = "";
+    for (var e = 0; e < leadingEmpty; e++) emptyCells += '<div class="st-hm-cell is-empty"></div>';
+    var dayCells = keys.map(function (k) {
+      var b = buckets[k];
+      var level = 0;
+      if (b.sec > 0) {
+        var ratio = b.sec / max;
+        if (ratio < 0.25) level = 1;
+        else if (ratio < 0.5) level = 2;
+        else if (ratio < 0.75) level = 3;
+        else level = 4;
+      }
+      var isActive = (S.historyDayFilter === k) ? " is-active" : "";
+      var mins = Math.floor(b.sec / 60);
+      var title = b.sec > 0 ? (mins + " دقیقه · " + b.count + " جلسه") : "بدون مطالعه";
+      return '<button type="button" class="st-hm-cell st-hm-l' + level + isActive + '" data-st-act="hist-day" data-day="' + k + '" title="' + title + '"></button>';
+    }).join("");
+    var dowLabels = ["ش","ی","د","س","چ","پ","ج"];
+    var headers = dowLabels.map(function (l) { return '<div class="st-hm-dow">' + l + '</div>'; }).join("");
+    return '<div class="st-hist-heatmap">' +
+      '<div class="st-hm-headers">' + headers + '</div>' +
+      '<div class="st-hm-grid">' + emptyCells + dayCells + '</div>' +
+    '</div>';
+  }
   function renderHistory() {
+    var headerCommon =
+      _navTabsHTML("history") +
+      '<div class="st-topbar">' +
+        '<div class="st-user-chip">' + esc(S.profile.display_name) + '</div>' +
+      '</div>' +
+      '<div class="st-hero st-hero-small"><h1>📜 تاریخچهٔ مطالعه</h1></div>' +
+      _renderHistRangePills() +
+      '<div class="st-hist-filters">' +
+        _renderHistCourseFilter() +
+        (S.historyDayFilter ? '<button class="st-btn-ghost st-btn-small" data-st-act="hist-day-clear" title="حذف فیلتر روز">✖ ' + esc(S.historyDayFilter) + '</button>' : '') +
+      '</div>' +
+      (S.historyError ? '<div class="st-error">' + esc(S.historyError) + '</div>' : "");
+
     if (S.historySessions === null) {
       S.container.innerHTML = pageWrap(
-        _navTabsHTML("history") +
-        '<div class="st-topbar">' +
-          '<div class="st-user-chip">' + esc(S.profile.display_name) + '</div>' +
-        '</div>' +
+        headerCommon +
         '<div class="st-card st-loading">در حال بارگذاری...</div>'
       );
       wire();
       return;
     }
+    var filtered = _filteredHistorySessions();
+    var heatmap = _renderHistHeatmap();
     var groups = {};
     var order = [];
-    S.historySessions.forEach(function (s) {
+    filtered.forEach(function (s) {
       var k = _dayKeyFromIso(s.started_at);
       if (!groups[k]) { groups[k] = []; order.push(k); }
       groups[k].push(s);
@@ -803,28 +912,22 @@
         '<div class="st-hist-day-rows">' + rows + '</div>' +
       '</div>';
     }).join("");
-    var empty = S.historySessions.length === 0
-      ? '<div class="st-hist-empty">هنوز جلسه‌ای در ۷ روز گذشته ثبت نشده</div>'
+    var empty = filtered.length === 0
+      ? '<div class="st-hist-empty">جلسه‌ای در این بازه نیست</div>'
       : "";
     var pending = S.historyPendingDelete
-      ? '<div class="st-hist-confirm"><div>آیا این جلسه حذف شود؟</div>' +
-        '<div class="st-hist-confirm-actions">' +
-          '<button class="st-btn-danger st-btn-small" data-st-act="hist-del-confirm">تأیید حذف</button>' +
-          '<button class="st-btn-ghost st-btn-small" data-st-act="hist-del-cancel">انصراف</button>' +
-        '</div></div>'
+      ? '<div class="st-hist-confirm"><div>آیا این جلسه حذف شود؟</div><div class="st-hist-confirm-actions">' +
+        '<button class="st-btn-danger st-btn-small" data-st-act="hist-del-confirm">تأیید حذف</button>' +
+        '<button class="st-btn-ghost st-btn-small" data-st-act="hist-del-cancel">انصراف</button></div></div>'
       : "";
     S.container.innerHTML = pageWrap(
-      _navTabsHTML("history") +
-      '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(S.profile.display_name) + '</div>' +
-      '</div>' +
-      '<div class="st-hero st-hero-small"><h1>📜 تاریخچهٔ مطالعه</h1><p>۷ روز گذشته</p></div>' +
+      headerCommon +
       '<div class="st-hist-actions">' +
         '<button class="st-btn-primary" data-st-act="hist-add" title="افزودن جلسهٔ دستی">➕ افزودن دستی</button>' +
         '<button class="st-btn-ghost" data-st-act="hist-reload" title="تازه‌سازی">🔄 تازه‌سازی</button>' +
       '</div>' +
-      (S.historyError ? '<div class="st-error">' + esc(S.historyError) + '</div>' : '') +
       pending +
+      heatmap +
       empty +
       '<div class="st-hist-groups">' + dayBlocks + '</div>'
     );
@@ -1050,32 +1153,247 @@
     );
     wire();
   }
-  function renderStatsStub() {
-    var today = S.todayTotal || 0;
-    var byCourse = {};
-    var hs = S.historySessions || [];
-    hs.forEach(function (s) {
+  function _statsRangeIso(period) {
+    var now = new Date();
+    var start = new Date(now); start.setHours(0,0,0,0);
+    var end = new Date(now); end.setHours(23,59,59,999);
+    var days = 1;
+    if (period === "week") { days = 7; start.setDate(start.getDate() - 6); }
+    else if (period === "month") { days = 30; start.setDate(start.getDate() - 29); }
+    return { startIso: start.toISOString(), endIso: end.toISOString(), days: days };
+  }
+  function _loadStats() {
+    if (!S.user || !S.group || !_sb) return Promise.resolve();
+    if (S.statsLoading) return Promise.resolve();
+    S.statsLoading = true; S.statsError = null;
+    if (S.navTab === "stats") render();
+    var r = _statsRangeIso(S.statsPeriod);
+    return qGetRangeSessions(S.user.id, S.group.id, r.startIso, r.endIso)
+      .then(function (rows) {
+        S.statsSessions = rows || [];
+        S.statsLoading = false;
+        if (S.navTab === "stats") render();
+      }).catch(function (err) {
+        S.statsError = String(err && err.message || err);
+        S.statsLoading = false;
+        if (S.navTab === "stats") render();
+      });
+  }
+  function _statsAggregateDaily(sessions, days) {
+    var now = new Date(); now.setHours(0,0,0,0);
+    var start = new Date(now); start.setDate(start.getDate() - (days - 1));
+    var labels = [];
+    var buckets = {};
+    for (var i = 0; i < days; i++) {
+      var d = new Date(start); d.setDate(d.getDate() + i);
+      var k = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+      buckets[k] = 0;
+      labels.push({ date: d, key: k });
+    }
+    (sessions || []).forEach(function (s) {
+      if (!s.ended_at || s.end_reason === "crash") return;
+      var st = new Date(s.started_at);
+      var k = st.getFullYear() + "-" + (st.getMonth() + 1) + "-" + st.getDate();
+      if (buckets[k] === undefined) return;
+      var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st.getTime()) / 1000));
+      buckets[k] += dur;
+    });
+    return labels.map(function (l) { return { date: l.date, key: l.key, sec: buckets[l.key] }; });
+  }
+  function _statsAggregateByCourse(sessions) {
+    var map = {};
+    (sessions || []).forEach(function (s) {
       if (!s.ended_at || s.end_reason === "crash") return;
       var k = s.course_id || "none";
-      var d = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
-      byCourse[k] = (byCourse[k] || 0) + d;
+      var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
+      map[k] = (map[k] || 0) + dur;
     });
-    var rows = Object.keys(byCourse).map(function (k) {
-      var c = _courseById(k);
+    return map;
+  }
+  function _renderLineChart(daily) {
+    var W = 640, H = 180, PAD = 24, n = daily.length;
+    if (n < 2) return '<div class="st-hist-empty">دادهٔ کافی برای نمودار نیست</div>';
+    var maxSec = 0;
+    for (var i = 0; i < n; i++) { if (daily[i].sec > maxSec) maxSec = daily[i].sec; }
+    if (maxSec === 0) maxSec = 1;
+    var xs = [], ys = [];
+    for (var j = 0; j < n; j++) {
+      xs.push(PAD + (W - 2 * PAD) * (j / (n - 1)));
+      ys.push(H - PAD - (H - 2 * PAD) * (daily[j].sec / maxSec));
+    }
+    var path = "M" + xs[0].toFixed(1) + "," + ys[0].toFixed(1);
+    for (var k = 1; k < n; k++) path += " L" + xs[k].toFixed(1) + "," + ys[k].toFixed(1);
+    var area = path + " L" + (W - PAD) + "," + (H - PAD) + " L" + PAD + "," + (H - PAD) + " Z";
+    var dots = "";
+    for (var m = 0; m < n; m++) {
+      if (daily[m].sec === 0) continue;
+      dots += '<circle cx="' + xs[m].toFixed(1) + '" cy="' + ys[m].toFixed(1) + '" r="3" fill="rgba(99,102,241,1)"/>';
+    }
+    return '<svg class="st-line-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+      '<defs><linearGradient id="stLineGrad" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="rgba(99,102,241,0.35)"/>' +
+      '<stop offset="100%" stop-color="rgba(99,102,241,0)"/>' +
+      '</linearGradient></defs>' +
+      '<path d="' + area + '" fill="url(#stLineGrad)"/>' +
+      '<path d="' + path + '" fill="none" stroke="rgba(99,102,241,1)" stroke-width="2" stroke-linejoin="round"/>' +
+      dots +
+    '</svg>';
+  }
+  function _statsPeriodPillsHTML() {
+    var opts = [
+      { id: "today", label: "امروز" },
+      { id: "week", label: "۷ روز" },
+      { id: "month", label: "۳۰ روز" }
+    ];
+    return '<div class="st-period-pills">' + opts.map(function (o) {
+      var cls = "st-period-pill" + (S.statsPeriod === o.id ? " is-active" : "");
+      return '<button type="button" class="' + cls + '" data-st-act="stats-period" data-period="' + o.id + '">' + o.label + '</button>';
+    }).join("") + '</div>';
+  }
+  var _PERSIAN_DOW = ["یکشنبه","دوشنبه","سه‌شنبه","چهارشنبه","پنج‌شنبه","جمعه","شنبه"];
+  function _statsTopDays(daily, n) {
+    var arr = (daily || []).filter(function (d) { return d.sec > 0; });
+    arr.sort(function (a, b) { return b.sec - a.sec; });
+    return arr.slice(0, n || 3);
+  }
+  function _statsBestSession(sessions) {
+    var best = null;
+    (sessions || []).forEach(function (s) {
+      if (!s.ended_at || s.end_reason === "crash") return;
+      var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
+      if (!best || dur > best.durSec) best = { session: s, durSec: dur };
+    });
+    return best;
+  }
+  function _statsCourseBreakdownHTML(byCourse, limit) {
+    var keys = Object.keys(byCourse);
+    if (keys.length === 0) return '<div class="st-hist-empty">هنوز جلسه‌ای در این بازه ثبت نشده</div>';
+    var entries = keys.map(function (k) { return { key: k, sec: byCourse[k] }; });
+    entries.sort(function (a, b) { return b.sec - a.sec; });
+    var lim = limit || 5;
+    var shown = entries.slice(0, lim);
+    var maxC = shown[0].sec || 1;
+    var rows = shown.map(function (e) {
+      var c = _courseById(e.key === "none" ? null : e.key);
       var label = c ? c.name : "بدون درس";
-      return '<div class="st-hist-row"><div class="st-hist-row-main"><span class="st-hist-row-time">' + esc(label) + '</span><span class="st-hist-row-dur">' + _fmtTimer(byCourse[k]) + '</span></div></div>';
+      var colorCls = c ? _courseColorClass(c) : "st-course-none";
+      var pct = maxC > 0 ? (e.sec / maxC * 100) : 0;
+      return '<div class="st-course-stat">' +
+        '<div class="st-course-stat-row">' +
+          '<span class="st-course-stat-label ' + colorCls + '"><span class="st-course-dot"></span>' + esc(label) + '</span>' +
+          '<span class="st-course-stat-val">' + _fmtTimer(e.sec) + '</span>' +
+        '</div>' +
+        '<div class="st-course-stat-bar"><div class="st-course-stat-fill ' + colorCls + '" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '</div>';
     }).join("");
-    if (!rows) rows = '<div class="st-hist-empty">هنوز جلسه‌ای ثبت نشده</div>';
+    var more = entries.length > lim
+      ? '<div class="st-hist-more">+ ' + fa0(entries.length - lim) + ' مورد دیگر</div>'
+      : "";
+    return rows + more;
+  }
+  function _statsTopDaysHTML(daily) {
+    var top = _statsTopDays(daily, 3);
+    if (top.length === 0) {
+      return '<div class="st-hist-empty">هنوز روزی با مطالعه ثبت نشده</div>';
+    }
+    return '<div class="st-topdays">' + top.map(function (d, i) {
+      var dow = _PERSIAN_DOW[d.date.getDay()];
+      var dateKey = _dayKeyFromIso(d.date.toISOString());
+      return '<div class="st-topday">' +
+        '<div class="st-topday-rank">' + fa0(i + 1) + '</div>' +
+        '<div class="st-topday-info">' +
+          '<div class="st-topday-date">' + esc(dow) + ' · ' + esc(dateKey) + '</div>' +
+          '<div class="st-topday-dur">' + _fmtTimer(d.sec) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join("") + '</div>';
+  }
+  function _statsBestSessionHTML(best) {
+    if (!best) return '<div class="st-hist-empty">جلسه‌ای ثبت نشده</div>';
+    var s = best.session;
+    var start = new Date(s.started_at);
+    var end = new Date(s.ended_at);
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    var timeStr = _toPersianDigits(pad(start.getHours())) + ":" + _toPersianDigits(pad(start.getMinutes())) +
+                  " → " + _toPersianDigits(pad(end.getHours())) + ":" + _toPersianDigits(pad(end.getMinutes()));
+    var c = _courseById(s.course_id || null);
+    var label = c ? c.name : "بدون درس";
+    var colorCls = c ? _courseColorClass(c) : "st-course-none";
+    var dateKey = _dayKeyFromIso(s.started_at);
+    return '<div class="st-bestsession">' +
+      '<div class="st-bestsession-dur">' + _fmtTimer(best.durSec) + '</div>' +
+      '<div class="st-bestsession-meta">' +
+        '<span class="st-course-stat-label ' + colorCls + '"><span class="st-course-dot"></span>' + esc(label) + '</span>' +
+        '<span class="st-bestsession-when">' + esc(dateKey) + ' · ' + timeStr + '</span>' +
+      '</div>' +
+    '</div>';
+  }
+  function renderStatistics() {
+    if (!S.container) return;
+    var loading = S.statsLoading || S.statsSessions === null;
+    var err = S.statsError;
+    var per = S.statsPeriod;
+    var days = _statsRangeIso(per).days;
+
+    var totalSec = 0, sessionCount = 0, maxDur = 0;
+    var daily = [], byCourse = {};
+    var best = null;
+
+    if (!loading && S.statsSessions) {
+      daily = _statsAggregateDaily(S.statsSessions, days);
+      byCourse = _statsAggregateByCourse(S.statsSessions);
+      for (var i = 0; i < S.statsSessions.length; i++) {
+        var s = S.statsSessions[i];
+        if (!s.ended_at || s.end_reason === "crash") continue;
+        sessionCount++;
+        var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
+        totalSec += dur;
+        if (dur > maxDur) maxDur = dur;
+      }
+      best = _statsBestSession(S.statsSessions);
+    }
+    var avgSec = days > 0 ? Math.floor(totalSec / days) : 0;
+
+    var chartHTML = "";
+    if (!loading) {
+      if (totalSec > 0) chartHTML = _renderLineChart(daily);
+      else chartHTML = '<div class="st-hist-empty">داده‌ای برای نمایش نیست — یک جلسه ثبت کن</div>';
+    }
+
+    var courseHTML = "";
+    if (!loading) {
+      courseHTML = _statsCourseBreakdownHTML(byCourse, 5);
+    }
+
+    var topDaysHTML = "";
+    if (!loading) topDaysHTML = _statsTopDaysHTML(daily);
+
+    var bestHTML = "";
+    if (!loading) bestHTML = _statsBestSessionHTML(best);
+
+    var summaryHTML = "";
+    if (loading) {
+      summaryHTML = '<div class="st-card st-loading">در حال بارگذاری...</div>';
+    } else {
+      summaryHTML =
+        '<div class="st-stats">' +
+          '<div class="st-stat"><span class="st-stat-ico">⏱</span><div><div class="st-stat-val">' + _fmtTimer(totalSec) + '</div><div class="st-stat-lbl">مجموع</div></div></div>' +
+          '<div class="st-stat"><span class="st-stat-ico">📊</span><div><div class="st-stat-val">' + fa0(sessionCount) + '</div><div class="st-stat-lbl">جلسه</div></div></div>' +
+          '<div class="st-stat"><span class="st-stat-ico">📈</span><div><div class="st-stat-val">' + _fmtTimer(avgSec) + '</div><div class="st-stat-lbl">میانگین روزانه</div></div></div>' +
+          '<div class="st-stat"><span class="st-stat-ico">🏆</span><div><div class="st-stat-val">' + _fmtTimer(maxDur) + '</div><div class="st-stat-lbl">طولانی‌ترین</div></div></div>' +
+        '</div>' +
+        '<div class="st-chart-card"><div class="st-members-title">📈 روند</div>' + chartHTML + '</div>' +
+        '<div class="st-card"><div class="st-members-title">🏅 روزهای پربازده</div>' + topDaysHTML + '</div>' +
+        '<div class="st-card"><div class="st-members-title">⭐ بهترین جلسه</div>' + bestHTML + '</div>' +
+        '<div class="st-card"><div class="st-members-title">📚 به تفکیک درس</div>' + courseHTML + '</div>';
+    }
+
     S.container.innerHTML = pageWrap(
       _navTabsHTML("stats") +
       '<div class="st-hero st-hero-small"><h1>📊 آمار</h1></div>' +
-      '<div class="st-stats">' +
-        '<div class="st-stat"><span class="st-stat-ico">⏱</span><div><div class="st-stat-val">' + _fmtTimer(today) + '</div><div class="st-stat-lbl">امروز</div></div></div>' +
-        '<div class="st-stat"><span class="st-stat-ico">📊</span><div><div class="st-stat-val">' + fa0(S.todaySessionCount || 0) + '</div><div class="st-stat-lbl">جلسات</div></div></div>' +
-      '</div>' +
-      '<div class="st-members-title">به تفکیک درس (امروز)</div>' +
-      '<div class="st-card">' + rows + '</div>' +
-      '<div class="st-hist-empty" style="margin-top:20px">📈 نمودارهای پیشرفته در Wave 2</div>'
+      _statsPeriodPillsHTML() +
+      (err ? '<div class="st-error">' + esc(err) + '</div>' : "") +
+      summaryHTML
     );
     wire();
   }
@@ -1491,7 +1809,7 @@
     if (S.readyView === "course-form") { S.container.innerHTML = _courseFormRender(); wire(); return; } // W1-v3 render course form
     if (S.readyView === "history") return (S.historyView === "form") ? renderHistoryForm() : renderHistory();
     if (S.navTab === "profile") return renderProfile();
-    if (S.navTab === "stats") return renderStatsStub();
+    if (S.navTab === "stats") return renderStatistics();
     if (S.navTab === "friends") return renderFriendsStub();
     var isOwner = S.group && S.profile && S.group.owner_id === S.user.id;
     var presByKey = {};
@@ -1672,8 +1990,20 @@
     if (!S.container) return;
     S.container.querySelectorAll("[data-st-act]").forEach(function (el) {
       if (el.tagName === "FORM") el.addEventListener("submit", onSubmit);
+      else if (el.tagName === "SELECT") el.addEventListener("change", onSelect);
       else el.addEventListener("click", onClick);
     });
+  }
+  function onSelect(e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    var act = t.getAttribute("data-st-act");
+    if (act === "hist-course-filter") {
+      var v = t.value;
+      S.historyCourseFilter = (v === "") ? null : v;
+      render();
+      return;
+    }
   }
   function onClick(e) {
     var t = e.target.closest("[data-st-act]");
@@ -1710,12 +2040,40 @@
     if (act === "hist-cancel") { _cancelHistoryForm(); return; }
     if (act === "hist-del-confirm") { _confirmDeleteHistory(); return; }
     if (act === "hist-del-cancel") { S.historyPendingDelete = null; render(); return; }
+    if (act === "hist-range") {
+      var rd = parseInt(t.getAttribute("data-range"), 10);
+      if (rd && rd !== S.historyRangeDays) {
+        S.historyRangeDays = rd;
+        S.historySessions = null;
+        S.historyDayFilter = null;
+        S.historyError = null;
+        render();
+        _loadHistory().then(function () { if (S.readyView === "history") render(); });
+      }
+      return;
+    }
+    if (act === "hist-day") {
+      var day = t.getAttribute("data-day");
+      S.historyDayFilter = (S.historyDayFilter === day) ? null : day;
+      render();
+      return;
+    }
+    if (act === "hist-day-clear") { S.historyDayFilter = null; render(); return; }
     if (act === "nav-tab") {
       var nt = t.getAttribute("data-st-tab");
       S.navTab = nt || "focus";
       if (nt === "history") {
         S.readyView = "history"; S.historyView = "list"; S.historySessions = null;
         render(); _loadHistory().then(function () { render(); });
+        return;
+      }
+      if (nt === "stats") {
+        S.readyView = "main";
+        if (S.statsSessions === null && !S.statsLoading) {
+          _loadStats();
+        } else {
+          render();
+        }
         return;
       }
       S.readyView = "main";
@@ -1728,6 +2086,17 @@
     if (act === "course-delete") { var _dc = t.getAttribute("data-course-id"); if (_dc && confirm("درس حذف شود؟ جلسات مرتبط باقی می‌مانند اما «بدون درس» می‌شوند.")) _deleteCourse(_dc); return; }
     if (act === "profile-save") { doSaveProfile(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
+    if (act === "stats-period") {
+      var sp = t.getAttribute("data-period");
+      if (sp !== S.statsPeriod) {
+        S.statsPeriod = sp;
+        S.statsSessions = null;
+        S.statsError = null;
+        S.statsLoading = false;
+        _loadStats();
+      }
+      return;
+    }
   }
   function onSubmit(e) {
     e.preventDefault();
@@ -1906,6 +2275,8 @@
     S.historySessions = null; S.historyView = "list"; S.historyEdit = null; S.historyError = null; S.historySaving = false; S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
     S.avatarPick = null;
+    S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
     render();
     loadConfig().then(function (c) {
       if (!c || !c.url || !c.publishableKey) { S.phase = "no-config"; render(); return; }
@@ -1952,6 +2323,8 @@
     S.historyPendingDelete = null;
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
     S.avatarPick = null;
+    S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
   };
   ST.status = function () {
     return { phase: S.phase, connection: S.connection, userId: S.user && S.user.id, groupId: S.group && S.group.id, hasSession: !!S.session };

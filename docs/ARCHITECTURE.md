@@ -1521,3 +1521,126 @@ C. Pomodoro mode
 D. Multi-day session history + manual edit
 E. Offline start-study behavior (A/B/C)
 F. UI polish (cards, avatar, buttons, copy-code, status badges)
+
+## Study Together 2.0 — Wave 1+2+3 (2026-10-23) — Agent #28
+
+### Purpose
+
+Multi-day statistics، cross-user leaderboard، and course attribution on top of V1 presence.
+
+### Runtime state (module-internal S)
+
+    S = {
+      // V1
+      phase, user, profile, group, members,
+      session, todayTotal, pendingClientId,
+      connection, container, formTab, busy,
+
+      // F-Plus + C
+      readyView, onBreak, todaySessionCount, lastSessionEndedAt,
+      pom,
+
+      // D
+      historySessions, historyView, historyEdit, historyError,
+      historySaving, historyPendingDelete, historyRangeDays,
+      historyCourseFilter, historyDayFilter,
+
+      // W1
+      courses, selectedCourseId, navTab, courseEdit,
+      courseError, courseSaving, avatarPick,
+
+      // W2
+      statsSessions, statsPeriod, statsLoading, statsError,
+
+      // W3
+      memberProfileView, memberProfileData, memberProfileLoading,
+      memberProfileError, leaderboardData, leaderboardLoading,
+      leaderboardError, leaderboardPeriod
+    }
+
+### Module structure (~2600 lines)
+
+    app/residency/study-together.js
+    ├─ Config / SDK loader (V1)
+    ├─ Pending recovery (V1، ADR-093)
+    ├─ Session lifecycle (V1 + courseId via startSession(cid, courseId))
+    ├─ Realtime presence (V1، ADR-094)
+    ├─ _fmtTimer via _toPersianDigits (C-1 fix)
+    ├─ Pomodoro (C، ADR-094)
+    ├─ History (D، ADR-101)
+    ├─ Statistics (W2، ADR-101)
+    ├─ Friends + Leaderboard + Member Profiles (W3، ADR-101/102/103)
+    └─ __tests (41 tests)
+
+### Data flow
+
+    User action (chip / pom-start / period-pill / member-card)
+      → state mutation in S
+      → render()
+      → wire() binds [data-st-act] handlers
+      → onClick / onSubmit / onSelect dispatch
+
+    Network (Supabase):
+      qInsertSession، qUpdateSession، qUpdateManualSession
+      qGetRangeSessions (uid + gid + startIso + endIso)
+      qGetGroupRangeSessions (gid + startIso + endIso — all users)
+      qGetCourses / qInsertCourse / qUpdateCourse / qDeleteCourse
+      qGetProfiles (all share_* + avatar_key)
+
+    Realtime:
+      channel: group:<gid> (private)
+      presence: { display_name, status, today_total_seconds?, activity_title?, session_started_at? }
+      heartbeat: track() at 30s intervals
+
+### UI sections (5)
+
+    navTab: "focus" | "profile" | "history" | "stats" | "friends"
+
+    render() dispatch:
+      readyView="settings"  → renderSettings()
+      readyView="course-form" → innerHTML = _courseFormRender(); wire()
+      readyView="history"   → renderHistoryForm() | renderHistory()
+      navTab="profile"      → renderProfile()
+      navTab="stats"        → renderStatistics()
+      navTab="friends"      → renderFriends() (+ modal overlay if memberProfileView)
+      else                  → renderReady() (Focus Studio)
+
+### Migrations applied
+
+- `study_courses` (M1) — user-scoped، RLS 4 self policies
+- `study_sessions.course_id` (M2) — nullable FK، server trigger `enforce_session_course_owner`
+- `profiles.avatar_key` / `bio` / `share_course_breakdown` / `share_history_with_group` (M3)
+
+SQL: `docs/study-together-2.0-migrations.sql`
+
+### Privacy model (ADR-103)
+
+- `share_daily_total=true/false` — RLS on `study_sessions` SELECT
+- `share_timeline` — presence payload gate
+- `share_course_breakdown` — UI gate (member profile modal)
+- `share_history_with_group` — UI gate (recent 10 rows)
+
+ISSUE-ST-05 documented — only `share_daily_total` is server-enforced.
+
+### Design System tokens (W1)
+
+    .st-page {
+      --st-ds-bg-1: rgba(255,255,255,0.04);
+      --st-ds-bg-2: rgba(255,255,255,0.06);
+      --st-ds-border: rgba(255,255,255,0.08);
+      --st-ds-radius-sm/md/lg/xl: 6/10/14/20px;
+      --st-course-1..8: 8 gradient colors;
+    }
+
+Components: `.st-nav-tab`، `.st-course-chip`، `.st-stat`، `.st-hm-cell`، `.st-line-chart`، `.st-timer-ring`، `.st-lb-row`، `.st-member-profile-overlay`، `.st-hist-row`، `.st-pom-panel`
+
+### Frozen (unchanged)
+
+Schema v22، `window.INTERNSHIP_STATE`، `state.tasks`، `state.residency.activities`، SQL/RLS on core tables، ADR-081، ADR-091..094، ADR-100..103.
+
+### What NOT to touch (in this subsystem)
+
+- Server trigger `enforce_session_course_owner` — security boundary
+- `_toPersianDigits` + `_fmtTimer` — zero-padding bug fix
+- `renderX(); wire(); return;` dispatch pattern (not `return renderX()`)
+- `_agent*-audit/` gitignore

@@ -598,3 +598,58 @@ Candidates (not authorized yet):
 - V2 requests A-F (owner-driven)
 
 ## NEXT PHASE — Await Design Agent
+
+## STUDY TOGETHER 2.0 — COMPLETE (2026-10-23)
+
+**Status:** IMPLEMENTATION COMPLETE · PRIVATE PILOT · 3 commits on main
+
+### Commits
+
+| Commit | Wave | Delta |
+|---|---|---|
+| `74efa79` | V1 + D + Wave 1 | +5008/-1985 · 31 files |
+| `db09687` | Wave 2 | +630/-40 · 2 files |
+| `27e4069` | Wave 3 | +386/-11 · 2 files (HEAD) |
+
+### Delivered
+
+**V1** — private realtime presence (Supabase Free، Auth + Postgres + Realtime Presence، ADR-091..094)
+
+**D** — Study History + Manual Editing (7-day، local start-day grouping، validation، overlap rejection، optimistic concurrency، 12 unit tests)
+
+**Wave 1** — Design System، Nav 5-tab، Course CRUD + chips، Timer↔course binding (manual + pomodoro)، Profile + 4 privacy toggles + avatar picker (av-1..8)، SVG timer ring (timestamp-driven)، Stats/Friends stubs. Migrations M1+M2+M3 applied.
+
+**Wave 2** — Statistics (3 period modes، SVG line chart، 4 stat tiles، top-3 days، best session، per-course breakdown top-5). History expand (7/30/90، monthly heatmap 5 levels، course filter، day-click filter، day-clear chip).
+
+**Wave 3** — Friends (leaderboard 3 periods، rank badges، clickable member cards، member profile modal with privacy gating).
+
+### Test summary
+
+- Unit: 41/41
+- D-S01..S04: 4/4
+- F.2a-c (server ownership): 3/3
+- Wave 1: 13/13
+- Wave 2: 59/59
+- Wave 3: 22/22
+- State integrity: 196/156/22 UNCHANGED
+
+### Known limitations (accepted)
+
+- ISSUE-ST-04 — presence reconnect duplication (pre-existing V1)
+- ISSUE-ST-05 — two-layer privacy (RLS gates only `share_daily_total`)
+- ISSUE-ST-06..09 — env-limited NOT TESTED (concurrent edit، reduced-motion، multi-device، crash history)
+
+### Release Gate
+
+V1 Release Gate همچنان `OPEN — PRIVATE PILOT WITH DOCUMENTED LIMITATIONS`. Wave 1-3 این محدودیت را رفع نمی‌کنند.
+
+### Next — Wave 4 candidates (بدون scope قفل)
+
+- Storage/avatar upload (B اصلی)
+- Group analytics cross-user (گسترش RLS برای share_* — ADR-104)
+- Custom Pomodoro durations
+- Offline sync queue (نیازمند ADR)
+- NOTIFICATION OS-level
+- Group chat / activity feed
+- ISSUE-ST-04 fix (presence reconnect)
+- Push to origin/main (3 commits ahead)

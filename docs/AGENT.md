@@ -628,3 +628,51 @@ F. UI polish (cards, avatar, buttons, copy-code) — high/ low
 
 Last Completed: Study Together V1 implementation + live validation.
 Awaiting: Design Agent decision on Release Gate + V2 features A-F.
+
+## Session Update (2026-10-23 · Agent #28)
+
+Schema: v22 (no bump). Version: v0.6.1 (no release — private pilot gate open).
+
+### Phases completed
+
+- **C** — Pomodoro implementation (25/5, timestamp-driven, marker-based recovery)
+- **D** — Study History + Manual Editing (12 unit + 4 SQL security + 18 integration)
+- **Study Together 2.0 Wave 1** — Design System، Nav 5-tab، Course CRUD، Timer↔course، Profile + avatar picker، SVG timer ring
+- **Wave 2** — Stats (period selector + line chart + top days + best session + course breakdown)، History expand (7/30/90 + heatmap + filters)
+- **Wave 3** — Friends (leaderboard + rank badges + member profile modal + privacy gating)
+
+### Git commits
+
+- `74efa79` — V1 + D + Wave 1 (31 files, +5008/-1985)
+- `db09687` — Wave 2 (2 files, +630/-40)
+- `27e4069` — Wave 3 (2 files, +386/-11) — HEAD
+
+### New invariants (enforce)
+
+- **`_toPersianDigits` نه `fa0`** برای zero-padded — `fa0("00") = "۰"` نه "۰۰"
+- **render* dispatch**: `S.container.innerHTML = renderX(); wire(); return;` نه `return renderX()`
+- **waitFor الگوی تست**: نه `phase==="ready"` تنها؛ روی عنصر واقعی
+- **Detached element بعد از render**: query مجدد کن، reference cache نکن
+- **Pomodoro fast-forward**: از طریق nav-away/back (localStorage → S.pom)
+- **Multiple open sessions**: loop تا pom-start (نه end)
+- **qGetProfiles**: همهٔ ستون‌های موردنیاز در SELECT
+- **Server ownership**: `private.enforce_session_course_owner()` trigger (42501) — client validation تنها کافی نیست
+- **Test-script bug ≠ module bug**: شاهد قطعی از DB قبل از patch
+- **`_agent*-audit/` در gitignore** — audit folder commit نمی‌شود
+
+### Known issues added
+
+- **ISSUE-ST-04** — presence reconnect duplication (pre-existing V1)
+- **ISSUE-ST-05** — 2-layer privacy (RLS gates only share_daily_total)
+
+### Frozen — unchanged
+
+Schema v22، `window.INTERNSHIP_STATE`، `state.tasks`، `state.residency.activities`، SQL/RLS on core tables، ADR-081، ADR-091..094.
+
+### Last completed
+
+Wave 3 committed. Study Together 2.0 (V1 + W1 + W2 + W3) shipped on `main`. V1 Release Gate remains `OPEN — PRIVATE PILOT`.
+
+### Awaiting
+
+Design Agent directive for Wave 4 (or other phase).

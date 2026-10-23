@@ -403,3 +403,70 @@ Technical lessons (boot() reassign, Realtime stability, verification patterns) r
 - Wave 1 begins (F then C).
 - D contract authoring may begin in parallel (no code).
 - Any change touching RLS / SQL / Schema / session requires separate ADR + Design Agent approval.
+
+## AGENT-28 CLOSEOUT - 2026-10-23
+
+**Schema:** v22 (no bump). **Version:** v0.6.1 (no release — private pilot).
+
+### Study Together 2.0 — IMPLEMENTATION COMPLETE · PRIVATE PILOT
+
+| Wave | Commit | Delta |
+|---|---|---|
+| V1 + D + Wave 1 | `74efa79` | +5008/-1985 · 31 files |
+| Wave 2 | `db09687` | +630/-40 · 2 files |
+| Wave 3 | `27e4069` | +386/-11 · 2 files (HEAD) |
+
+### Delivered
+
+**Wave 1 (with V1 + D)** — Design System tokens، Nav 5-tab، Course CRUD + chips، Timer↔course binding (manual + pomodoro)، Profile + 4 privacy toggles + avatar picker (av-1..8)، SVG timer ring (timestamp-driven)، Stats/Friends stubs، Migrations M1+M2+M3 applied.
+
+**Wave 2** — Stats (period selector 3 modes، SVG line chart، 4 stat tiles، top-3 days، best session، course breakdown top-5). History expand (7/30/90، monthly heatmap 5 levels، course filter، day-click filter، day-clear chip).
+
+**Wave 3** — Friends (leaderboard 3 periods، rank badges، clickable cards، member profile modal with privacy gating: share_daily_total / share_course_breakdown / share_history_with_group / share_timeline).
+
+**D** — Study History + Manual Editing: 7-day، local start-day grouping، validation، overlap rejection، optimistic concurrency، 12 unit tests T23-T34.
+
+**C (Pomodoro)** — 25/5 timestamp-driven، marker-based recovery، `S.onBreak` state، SVG ring.
+
+### Migrations applied
+
+- **M1** — `study_courses` (RLS 4 self policies، index)
+- **M2** — `study_sessions.course_id` (FK nullable) + `private.enforce_session_course_owner()` trigger (SECURITY DEFINER، search_path=''، error 42501)
+- **M3** — `profiles.avatar_key` / `bio` / `share_course_breakdown` / `share_history_with_group`
+
+SQL registered: `docs/study-together-2.0-migrations.sql`
+
+### Tests
+
+| Suite | Result |
+|---|---|
+| Unit (module __tests) | **41/41** |
+| D security (D-S01..S04) | **4/4** (cross-user UPDATE/DELETE/SELECT/INSERT blocked) |
+| Server ownership (F.2a-c) | **3/3** |
+| Wave 1 (V3 final) | **13/13** |
+| Wave 2 (W2A 18 + W2B 21 + W2C 20) | **59/59** |
+| Wave 3 (W3) | **22/22** |
+| State integrity | **196 tasks / 156 activities / schema 22 UNCHANGED** |
+
+### Known limitations
+
+- **ISSUE-ST-04** — presence reconnect duplication (pre-existing V1، out of scope)
+- **ISSUE-ST-05** — 2-layer privacy (RLS gates only `share_daily_total`؛ `share_course_breakdown` / `share_history_with_group` = UI-only)
+- **D-I03** — concurrent edit NOT TESTED (2-tab env)
+- **Multi-device** course sync NOT TESTED
+- **Crash history in real data** NOT TESTED (needs SQL Editor)
+
+### Preserved (طبق دستور Design Agent)
+
+- `_agent28-audit/` — دست‌نخورده (gitignored)
+- `_agent27-audit/` — دست‌نخورده (gitignored)
+- همهٔ `*.bak-*` — حفظ‌شده (gitignored)
+- `data/study-together.js` — config واقعی (gitignored)
+
+### Release Gate
+
+V1 همچنان `OPEN — PRIVATE PILOT WITH DOCUMENTED LIMITATIONS`. توسعهٔ 2.0 محدودیت‌های V1 (L08/L10 offline) را رفع نکرده.
+
+### Next
+
+Await Design Agent directive for Wave 4 (Storage/avatar upload، group analytics cross-user، custom pomodoro، offline sync queue، presence reconnect fix).

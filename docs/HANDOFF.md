@@ -306,3 +306,87 @@ NOT authorized (unchanged):
 | Study Together V1 | PRIVATE PILOT - RELEASE GATE OPEN (documented limitations) |
 | Study Together V2 | AUTHORIZED - Wave 1 (F, C) |
 | Next phase | Wave 1 execution |
+
+## For Agent #29
+
+### Environment
+
+- Repo: `D:\Desktop\.internship-os\internship-os`
+- Schema: v22 (no bump)
+- Version: v0.6.1
+- HEAD: `27e4069` (Wave 3)
+- origin/main: `13985cd` (v0.6.0 — push نشده، ۳ commit جلوتر)
+- Study Together config: `data/study-together.js` (owner-supplied، gitignored)
+
+### Current status
+
+**Study Together 2.0 — IMPLEMENTATION COMPLETE · PRIVATE PILOT**
+
+V1 + Wave 1 + Wave 2 + Wave 3 همه commit شده. Release Gate: `OPEN — PRIVATE PILOT WITH DOCUMENTED LIMITATIONS`.
+
+### What was shipped (cumulative)
+
+- V1 — private realtime presence (Supabase Free)
+- C — Pomodoro 25/5 timestamp-driven
+- D — Study History + Manual Editing
+- Wave 1 — Design System + Nav + Courses + Profile + avatar picker + SVG timer ring
+- Wave 2 — Statistics + History expand + Heatmap
+- Wave 3 — Friends + Leaderboard + Member profiles
+
+### Critical invariants for Agent #29
+
+- `window.__os` is REASSIGNED in boot() — bridges must merge or poll
+- Realtime: heartbeat 30s، closure capture per channel، backoff 3→6→12→24→30، `setAuth` on token change
+- Server-side ownership: `private.enforce_session_course_owner()` trigger (42501) — لازم
+- `_toPersianDigits` برای zero-padded (نه fa0)
+- render* dispatch: `innerHTML = renderX(); wire(); return;` نه `return renderX()`
+- `_agent*-audit/` gitignored — audit folder commit نمی‌شود
+- `share_daily_total` در RLS enforcement؛ `share_course_breakdown` / `share_history_with_group` = UI-only
+- Session model: `client_session_id` prefix `manual-` = manual insert
+- `service_role` هرگز در client
+
+### Pending decisions (require Design Agent approval)
+
+- ISSUE-ST-04 fix (presence reconnect duplication)
+- ISSUE-ST-05 (extend RLS to cover new share flags — needs migration)
+- Wave 4 scope (Storage/avatar upload? group analytics? custom pomodoro?)
+- Push to origin/main (3 commits ahead)
+
+### Recommended first actions
+
+1. Await Design Agent directive — no autonomous feature work
+2. Read AGENT-29-PROMPT.md full
+3. Read all 13 docs in order from §ترتیب خواندن
+4. If addressing NOT TESTED: provide script for owner (no direct FS access)
+
+### Files to read first (order)
+
+1. `docs/AGENT.md` (Session Update · Agent #28)
+2. `docs/AGENT-29-PROMPT.md`
+3. `docs/CURRENT.md` (AGENT-28 CLOSEOUT)
+4. `docs/HANDOFF.md` (this section)
+5. `docs/DECISIONS.md` (ADR-091..094 + ADR-100..103)
+6. `docs/ARCHITECTURE.md` (Study Together 2.0 section)
+7. `docs/KNOWN_ISSUES.md` (ISSUE-ST-01..05)
+8. `docs/ROADMAP.md` (STUDY TOGETHER 2.0)
+9. `docs/STUDY-TOGETHER.md`
+10. `docs/STUDY-TOGETHER-SQL.sql`
+11. `docs/study-together-2.0-migrations.sql`
+12. `app/residency/study-together.js`
+13. `docs/POWERSHELL-GUIDE.md`
+
+### Roadmap status
+
+| Phase | Status |
+|---|---|
+| R3 | CLOSED |
+| R2-H | CLOSED WITH LIMITATIONS |
+| R2-I | CLOSED WITH LIMITATIONS |
+| Workspace | ACCEPTED |
+| Final Regression v0.6.0 | ACCEPTED WITH LIMITATIONS |
+| Release v0.6.0 | RELEASED |
+| Study Together V1 | COMMITTED · PRIVATE PILOT |
+| Study Together 2.0 Wave 1 | COMMITTED |
+| Study Together 2.0 Wave 2 | COMMITTED |
+| Study Together 2.0 Wave 3 | COMMITTED |
+| Next phase | Await Design Agent |

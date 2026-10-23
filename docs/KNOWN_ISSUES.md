@@ -942,3 +942,49 @@ Next: Design Agent decision (owner request E).
 - Schema v22 UNCHANGED (196 / 156 / 22)
 - `window.INTERNSHIP_STATE` untouched
 - All PowerShell/JS patches applied via backup + verify + rollback pattern
+
+### ISSUE-ST-04 — Presence reconnect duplication (pre-existing V1)
+Status: Open (V1 pre-existing، خارج از scope C/D/W1/W2/W3)
+Severity: Medium (presence instability، no data loss)
+Area: study-together.js `schedulePresenceReconnect` — دو تعریف
+Context: در V1 (Agent #27)، تابع `schedulePresenceReconnect` دو بار در ماژول تعریف شد. نسخهٔ دوم (بدون backoff — 3s ثابت) نسخهٔ اول را overwrite می‌کند. نتیجه: در reconnect، `.on('presence', ...)` پس از `.subscribe()` صدا زده می‌شود که Supabase JS SDK رد می‌کند: `cannot add 'presence' callbacks for realtime:group:... after 'subscribe()'`.
+اثر: presence کوتاه‌مدت از دست می‌رود (کارت عضو به "قطع اتصال" می‌رود تا reconnect بعدی). session/history/pomodoro سالم‌اند.
+Next: نیازمند ADR جدا — حذف تکراری + حفظ backoff + تست live presence در reconnect.
+
+### ISSUE-ST-05 — Two-layer privacy (share flags)
+Status: Open (design documented in ADR-103)
+Severity: Low (accepted limitation)
+Area: RLS on study_sessions + profiles.share_* flags
+Context: RLS فقط `share_daily_total` را gate می‌کند. `share_course_breakdown` و `share_history_with_group` = UI-only. یک client مخرب با `share_daily_total=true` می‌تواند raw rows را query کند و خودش breakdown/history را حساب کند — همان که در V1 هم بود.
+Next: اگر design تصمیم گرفت RLS گسترش یابد، migration جدا + ADR-104+. فعلاً پذیرفته.
+
+### ISSUE-ST-06 — D-I03 Concurrent edit NOT TESTED
+Status: Open (env limitation)
+Severity: Low
+Area: qUpdateManualSession optimistic concurrency
+Context: `W2B`/`W3` tests همه PASS. فقط D-I03 (concurrent edit with 2 tabs) NOT TESTED — WebView2 single-instance، دو tab هم‌زمان با یک account ممکن نیست در تست.
+Next: تست واقعی با دو instance در صورت نیاز.
+
+### ISSUE-ST-07 — Wave 2/3 NOT TESTED در prefers-reduced-motion
+Status: Open (env limitation)
+Severity: Low
+Area: transitions in `.st-period-pill`، `.st-hm-cell`، `.st-lb-row`، `.st-member-profile-overlay`
+Context: CSS `@media (prefers-reduced-motion: reduce)` نوشته شده ولی تست واقعی (Windows Settings → Animation effects off) انجام نشد.
+Next: تست دستی در Windows Settings.
+
+### ISSUE-ST-08 — Multi-device course sync NOT TESTED
+Status: Open (env limitation)
+Severity: Low
+Area: study_courses visibility on second login
+Context: Persistence verified via migration + RLS، ولی سناریوی واقعی "login from second device and see courses" تست نشد.
+Next: تست با دستگاه دوم.
+
+### ISSUE-ST-09 — Crash history in real data NOT TESTED
+Status: Open (env limitation)
+Severity: Low
+Area: `recomputeTodayTotal` crash exclusion
+Context: T15/T16 unit tests PASS. ولی تعداد sessionهای crash واقعی در DB فعلی مشخص نیست (نیازمند SQL Editor).
+Next: مالک می‌تواند این query را اجرا کند:
+    select count(*) filter (where ended_at is null) as crash_open,
+           count(*) filter (where ended_at is not null) as crash_closed
+    from study_sessions where end_reason = '"'"'crash'"'"';

@@ -1835,3 +1835,144 @@ The following rules are MANDATORY for any realtime module in this project
 - Stable presence in 2-3 user tests after applying these rules
 - Without these rules: `CLOSED` loops every ~1-2 seconds, presence disappears
 - Anyone implementing a new realtime feature MUST follow ADR-094
+
+## ADR-100 — Study Together 2.0: Course System + Session Binding
+
+Date: 2026-10-23 (Agent #28)
+Status: Accepted
+
+### Decision
+
+Add a first-class `study_courses` domain and bind each `study_session` to an optional course via `course_id`. Server-side ownership enforced by trigger.
+
+### Rationale
+
+V1 could not attribute time to a subject. Cross-device and cross-user analytics require persistent `course_id` in `study_sessions` — not just in presence payload.
+
+### Contract
+
+- `study_courses` (id, user_id, name, color regex `st-course-[1-8]`, icon regex `[a-z0-9_-]{1,32}`, display_order, archived_at, timestamps)
+- RLS: 4 self policies (select / insert / update / delete) — user_id = auth.uid()
+- `study_sessions.course_id` nullable FK (ON DELETE SET NULL) — legacy NULL = "بدون درس"
+- `private.enforce_session_course_owner()` BEFORE INSERT OR UPDATE OF course_id, user_id — raises `course_not_owned_by_user` (errCode 42501) if course_id not owned by new.user_id
+- Client validation is a convenience layer, not a security boundary
+
+### Impact
+
+- `app/residency/study-together.js` (course CRUD + chips + timer binding)
+- `docs/study-together-2.0-migrations.sql`
+- Historical sessions with NULL course_id remain valid — UI displays "عمومی / بدون دسته"
+
+### Non-goals
+
+- Multi-course sessions
+- Session re-attribution after end
+- Cross-user course sharing (each course is user-scoped)
+
+---
+
+## ADR-101 — Study Together 2.0: Statistics & History Expand
+
+Date: 2026-10-23 (Agent #28)
+Status: Accepted
+
+### Decision
+
+Statistics page: 3 period presets (today / 7d / 30d) with server-driven aggregation (SVG line chart, 4 stat tiles, top-3 days, best session, per-course breakdown top-5). History expand: 7/30/90 day range with monthly heatmap (5 levels) + course filter + day-click filter.
+
+### Rationale
+
+V1 only showed "today" totals. Users need multi-day view to see trends and course attribution.
+
+### Contract
+
+- Period selector: `S.statsPeriod ∈ {"today","week","month"}`
+- `_statsRangeIso` returns start/end ISO + days count
+- `_statsAggregateDaily` produces day-bucketed array
+- `_statsAggregateByCourse` produces `{courseKey: seconds}`
+- `_renderLineChart` inline SVG (no external chart lib) — area gradient + dots
+- Top days sorted by duration desc, top 3
+- Best session = longest single ended session (crash excluded)
+- Course breakdown sorted by duration desc, top 5, colored by course
+- History: `S.historyRangeDays ∈ {7,30,90}`, `S.historyCourseFilter ∈ {null, "__none", courseId}`, `S.historyDayFilter ∈ {null, "YYYY-M-D"}`
+- Heatmap levels: l0 (no data) / l1 (<25%) / l2 (<50%) / l3 (<75%) / l4 (≥75%) of max
+- All views respect `prefers-reduced-motion`
+
+### Non-goals
+
+- Custom date ranges (Wave 4+)
+- Multi-metric comparison (avg vs median vs max)
+- Cross-user analytics (Wave 4+، gated by share flags)
+
+---
+
+## ADR-102 — Study Together 2.0: Server-Side Ownership Enforcement
+
+Date: 2026-10-23 (Agent #28)
+Status: Accepted
+
+### Decision
+
+Course ownership MUST be enforced server-side via PostgreSQL trigger، not client validation alone.
+
+### Rationale
+
+Client-side validation can be bypassed via DevTools / direct API calls. V1's RLS already enforced user-level ownership on `study_sessions` (INSERT/UPDATE/DELETE only self)، but allowed attaching any course UUID to your own session. Without the trigger, a malicious client could attach another user's course_id to their session، corrupting cross-user analytics (Wave 2/3).
+
+### Contract
+
+    create or replace function private.enforce_session_course_owner()
+    returns trigger language plpgsql security definer set search_path = ''
+    as $$ begin
+      if new.course_id is not null then
+        if not exists (select 1 from public.study_courses
+                       where id = new.course_id and user_id = new.user_id) then
+          raise exception 'course_not_owned_by_user' using errcode = '42501';
+        end if;
+      end if;
+      return new;
+    end; $$;
+
+    create trigger sessions_course_owner_check
+      before insert or update of course_id, user_id on public.study_sessions
+      for each row execute function private.enforce_session_course_owner();
+
+### Verified
+
+- F.2a INSERT cross-owner → rejected 42501
+- F.2b UPDATE own session to foreign course → rejected 42501
+- F.2c no stray rows in DB after attack
+
+### Non-goals
+
+- Enforcing content validity (duration، overlap) at DB layer — kept client-only per D-B3
+- Enforcing cross-user share flags beyond `share_daily_total` — see ISSUE-ST-05
+
+---
+
+## ADR-103 — Study Together 2.0: Two-Layer Privacy Model
+
+Date: 2026-10-23 (Agent #28)
+Status: Accepted
+
+### Decision
+
+`share_daily_total` enforced at DB layer (RLS on `study_sessions` SELECT); `share_course_breakdown` and `share_history_with_group` enforced at UI layer only — no RLS change.
+
+### Rationale
+
+- `share_daily_total` gates raw session durations — must be RLS-enforced to prevent cross-user leak via direct API
+- `share_course_breakdown` and `share_history_with_group` are aggregated views of the same data — a user with `share_daily_total=true` already exposes the raw rows; course/history flags add nothing at the storage layer
+- Extending RLS would require a new migration + policy, with no actual security gain
+- This is documented as ISSUE-ST-05 (accepted limitation)
+
+### Consequences
+
+- A malicious client with `share_daily_total=true` can query raw rows and compute course breakdown / history itself — but this was already true in V1
+- UI gates are honest about what the member chose to share، even if not a security boundary
+- If future need arises: extend RLS on `study_sessions` per-flag — new ADR required
+
+### Non-goals
+
+- Cross-user course analytics with `share_course_breakdown=false` — UI blocks، server allows
+- Time-based share (share only last 7 days) — Wave 4+

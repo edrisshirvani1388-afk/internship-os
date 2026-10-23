@@ -138,9 +138,9 @@
       var sc = document.createElement("script");
       sc.src = "../data/study-together.js";
       sc.onload = function () { _config = window.STUDY_TOGETHER_CONFIG || null; resolve(_config); };
-      sc.onerror = function () { resolve(null); };
+      sc.onerror = function () { _config = window.STUDY_TOGETHER_DEFAULTS || null; resolve(_config); };
       document.head.appendChild(sc);
-      setTimeout(function () { resolve(window.STUDY_TOGETHER_CONFIG || null); }, 5000);
+      setTimeout(function () { resolve(window.STUDY_TOGETHER_CONFIG || window.STUDY_TOGETHER_DEFAULTS || null); }, 5000);
     });
   }
   function loadSdk() {

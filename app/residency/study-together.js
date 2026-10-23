@@ -26,7 +26,7 @@
     pom: null,
     historySessions: null, historyView: "list", historyEdit: null, historyError: null, historySaving: false, historyPendingDelete: null,
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
-    avatarPick: null, avatarBusy: false, avatarError: null, sharePlanPreview: null, sharePlanBusy: false, sharePlanError: null, friendPlanData: null, inviteVisible: false, accountBusy: { identity: false, privacy: false, password: false, email: false }, accountErr: { identity: null, privacy: null, password: null, email: null }, accountOk: { identity: null, privacy: null, password: null, email: null }, friendPlanLoading: false, friendPlanError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
+    avatarPick: null, avatarBusy: false, avatarError: null, sharePlanPreview: null, sharePlanBusy: false, sharePlanError: null, friendPlanData: null, roomOpen: false, inviteVisible: false, accountBusy: { identity: false, privacy: false, password: false, email: false }, accountErr: { identity: null, privacy: null, password: null, email: null }, accountOk: { identity: null, privacy: null, password: null, email: null }, friendPlanLoading: false, friendPlanError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
     historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null, historyRangeMode: "shortcut", historyFromDate: null, historyToDate: null, calYear: null, calMonth: null, histExpanded: null, histSelected: {}, histBulkCourse: null,
     memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
@@ -2661,7 +2661,8 @@
     S.container.innerHTML = pageWrap(
       _navTabsHTML("friends") +
       '<div class="st-hero st-hero-small"><h1>👥 دوستان</h1><p>' + fa0((S.members||[]).length) + ' عضو</p></div>' +
-      _renderLeaderboardHTML() +
+      '<div class="st-room-entry"><button class="st-btn-primary st-btn-start" data-st-act="room-open">\uD83C\uDFAF \u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u062A\u0627\u0642 \u0645\u0637\u0627\u0644\u0639\u0647</button></div>' +
+    _renderLeaderboardHTML() +
       '<div class="st-members-title">اعضا</div>' +
       '<div class="st-member-grid">' + cards + '</div>' +
       (S.memberProfileView ? _renderMemberProfileHTML() : "")
@@ -2792,18 +2793,7 @@
       joinPresence();
     }, delay);
   }
-  function schedulePresenceReconnect() {
-    if (_reconnectTimer) return;
-    if (!S.user || !S.group) return;
-    console.log("[st] scheduling presence reconnect in 3000ms");
-    _reconnectTimer = setTimeout(function () {
-      _reconnectTimer = null;
-      if (!S.user || !S.group) return;
-      if (S.phase !== "ready") return;
-      console.log("[st] attempting presence reconnect");
-      joinPresence();
-    }, 3000);
-  }
+  
   function leavePresence() {
     if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
     if (_channel) { var old = _channel; _channel = null; console.log("[st] leavePresence: unsubscribing"); try { old.unsubscribe(); } catch (e) {} }
@@ -3050,7 +3040,133 @@
     if (_reminderDismissed()) return false;
     return true;
   }
+  function renderRoom() {
+    var presByKey = {};
+    presenceState().forEach(function (p) { presByKey[p.key] = p.meta; });
+    var now = Date.now();
+
+    var sessionBlock;
+    if (S.pom && S.pom.phase !== "idle") {
+      sessionBlock = _renderPomodoroPanel();
+    } else if (S.session) {
+      var elapsed = Math.max(0, Math.floor((now - new Date(S.session.started_at).getTime()) / 1000));
+      var curCourse = _courseById(S.selectedCourseId);
+      sessionBlock = '<div class="st-room-timer-wrap is-active">' +
+        '<div class="st-room-timer-label">\u23F1\uFE0F \u062F\u0631 \u062D\u0627\u0644 \u0645\u0637\u0627\u0644\u0639\u0647</div>' +
+        (curCourse ? '<div class="st-room-course">\uD83D\uDCD6 ' + esc(curCourse.name) + '</div>' : '') +
+        '<div class="st-room-timer" data-room-timer>' + _fmtTimer(elapsed) + '</div>' +
+        '<div class="st-room-cta">' +
+          '<button class="st-btn-ghost" data-st-act="break">\u2615 \u0627\u0633\u062A\u0631\u0627\u062D\u062A</button>' +
+          '<button class="st-btn-danger" data-st-act="end">\u23F9\uFE0F \u067E\u0627\u06CC\u0627\u0646</button>' +
+        '</div>' +
+      '</div>';
+    } else {
+      sessionBlock = '<div class="st-room-timer-wrap">' +
+        '<div class="st-room-timer-label">\u0622\u0645\u0627\u062F\u0647 \u0628\u0631\u0627\u06CC \u0634\u0631\u0648\u0639</div>' +
+        '<div class="st-room-timer">' + _fmtTimer(0) + '</div>' +
+        '<div class="st-room-cta">' +
+          '<button class="st-btn-primary st-btn-start" data-st-act="start">\u25B6\uFE0F \u0634\u0631\u0648\u0639 \u0645\u0637\u0627\u0644\u0639\u0647</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    var activeCount = 0;
+    var groupTotal = 0;
+
+    var membersHTML = S.members.map(function (m) {
+      var isSelf = m.user_id === S.user.id;
+      var p = presByKey[m.user_id];
+      var status;
+      if (isSelf) { status = S.session ? "studying" : (S.onBreak ? "break" : "idle"); }
+      else if (p && p.status) { status = p.status; }
+      else { status = "disconnected"; }
+
+      if (status === "studying") activeCount++;
+      if (isSelf) groupTotal += S.todayTotal;
+      else if (p && typeof p.today_total_seconds === "number") groupTotal += p.today_total_seconds;
+
+      var label, icon;
+      if (status === "studying") { label = "\u062F\u0631 \u062D\u0627\u0644 \u0645\u0637\u0627\u0644\u0639\u0647"; icon = "\uD83D\uDCD6"; }
+      else if (status === "break") { label = "\u0627\u0633\u062A\u0631\u0627\u062D\u062A"; icon = "\u2615"; }
+      else if (status === "disconnected") { label = "\u0642\u0637\u0639 \u0627\u062A\u0635\u0627\u0644"; icon = "\u26AB"; }
+      else { label = "\u0628\u06CC\u06A9\u0627\u0631"; icon = "\u23F8\uFE0F"; }
+
+      var cls = "st-room-card is-" + status;
+      var timer = "";
+      if (isSelf && S.session) {
+        var ds = Math.max(0, Math.floor((now - new Date(S.session.started_at).getTime()) / 1000));
+        timer = '<div class="st-room-card-timer" data-member-timer="' + esc(m.user_id) + '">' + _fmtTimer(ds) + '</div>';
+      } else if (p && p.session_started_at) {
+        var diff = Math.max(0, Math.floor((now - new Date(p.session_started_at).getTime()) / 1000));
+        timer = '<div class="st-room-card-timer" data-member-timer="' + esc(m.user_id) + '">' + _fmtTimer(diff) + '</div>';
+      }
+
+      var total = "";
+      if (isSelf) {
+        if (S.profile && S.profile.share_daily_total) total = '<div class="st-room-card-total">\u0627\u0645\u0631\u0648\u0632: ' + _fmtTimer(S.todayTotal) + '</div>';
+      } else if (p && typeof p.today_total_seconds === "number") {
+        total = '<div class="st-room-card-total">\u0627\u0645\u0631\u0648\u0632: ' + _fmtTimer(p.today_total_seconds) + '</div>';
+      }
+
+      var activity = "";
+      if (!isSelf && p && p.activity_title) activity = '<div class="st-room-card-activity">\uD83D\uDCD6 ' + esc(p.activity_title) + '</div>';
+
+      var avKey = m.avatar_key || "av-1";
+      var ownerBadge = m.role === "owner" ? ' <span class="st-m-owner">\u0645\u0627\u0644\u06A9</span>' : "";
+      var selfMark = isSelf ? ' <span class="st-m-self">\u0634\u0645\u0627</span>' : "";
+
+      return '<div class="' + cls + '">' +
+        '<div class="st-room-card-head">' +
+          '<div class="st-m-avatar st-m-avatar-' + status + ' st-avatar-' + esc(avKey) + '">' + _avatarInnerHTML(m) + '</div>' +
+          '<div class="st-room-card-name">' + esc(m.display_name) + ownerBadge + selfMark + '</div>' +
+        '</div>' +
+        '<div class="st-room-card-status">' + icon + ' ' + label + '</div>' +
+        timer + total + activity +
+      '</div>';
+    }).join("");
+
+    var summaryHTML = '<div class="st-room-summary">' +
+      '<div class="st-room-summary-item"><span class="st-room-summary-ico">\uD83D\uDC65</span><span><b>' + fa0(activeCount) + '</b> \u062F\u0631 \u062D\u0627\u0644 \u0645\u0637\u0627\u0644\u0639\u0647</span></div>' +
+      '<div class="st-room-summary-item"><span class="st-room-summary-ico">\u23F1</span><span>\u0645\u062C\u0645\u0648\u0639 \u0627\u0645\u0631\u0648\u0632 \u06AF\u0631\u0648\u0647: <b>' + _fmtTimer(groupTotal) + '</b></span></div>' +
+    '</div>';
+
+    S.container.innerHTML = pageWrap(
+      '<div class="st-topbar">' +
+        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' <span class="st-conn st-conn-' + S.connection + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646") + '</span></div>' +
+        '<button class="st-btn-ghost st-btn-small" data-st-act="room-close" title="\u062E\u0631\u0648\u062C \u0627\u0632 \u0627\u062A\u0627\u0642">\uD83D\uDEAA \u062E\u0631\u0648\u062C</button>' +
+      '</div>' +
+      '<div class="st-hero st-hero-small"><h1>\uD83C\uDFAF \u0627\u062A\u0627\u0642 \u0645\u0637\u0627\u0644\u0639\u0647\u0654 ' + esc(S.group.name) + '</h1></div>' +
+      sessionBlock +
+      summaryHTML +
+      '<div class="st-members-title">\uD83D\uDC65 \u0627\u0639\u0636\u0627\u06CC \u062D\u0627\u0636\u0631 (' + fa0(S.members.length) + ')</div>' +
+      '<div class="st-room-grid">' + membersHTML + '</div>'
+    );
+    wire();
+
+    if (_tickInterval) clearInterval(_tickInterval);
+    _tickInterval = setInterval(function () {
+      if (!S.container || !S.container.isConnected) { ST.close(); return; }
+      if (!S.roomOpen || S.phase !== "ready") return;
+      if (S.session) {
+        var el = S.container.querySelector('[data-room-timer]');
+        if (el) {
+          var e = Math.max(0, Math.floor((Date.now() - new Date(S.session.started_at).getTime()) / 1000));
+          el.textContent = _fmtTimer(e);
+        }
+        var selfEl = S.container.querySelector('[data-member-timer="' + esc(S.user.id) + '"]');
+        if (selfEl) {
+          var e2 = Math.max(0, Math.floor((Date.now() - new Date(S.session.started_at).getTime()) / 1000));
+          selfEl.textContent = _fmtTimer(e2);
+        }
+      }
+    }, 1000);
+    if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+    _heartbeatTimer = setInterval(function () {
+      if (S.phase === "ready") broadcastPresence();
+    }, 30000);
+  }
   function renderReady() {
+    if (S.roomOpen) return renderRoom();
     if (S.readyView === "settings") return renderSettings();
     if (S.readyView === "course-form") { S.container.innerHTML = _courseFormRender(); wire(); return; } // W1-v3 render course form
     if (S.readyView === "history") return (S.historyView === "form") ? renderHistoryForm() : renderHistory();
@@ -3416,6 +3532,8 @@
     if (act === "invite-toggle") { _toggleInviteVisibility(); return; }
     if (act === "avatar-remove") { _avatarRemove(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
+    if (act === "room-open") { S.roomOpen = true; S.readyView = "main"; render(); return; }
+    if (act === "room-close") { S.roomOpen = false; render(); return; }
     if (act === "member-open-profile") { _openMemberProfile(t.getAttribute("data-member-id")); return; }
     if (act === "share-plan-publish") { _sharePlanPublish(); return; }
     if (act === "friend-plan-refresh") { if (S.memberProfileView) { S.friendPlanData = null; _loadFriendPlan(S.memberProfileView.user_id, S.friendDayDate); } return; }
@@ -3623,7 +3741,7 @@
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
     S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null; S.inviteVisible = false; S.accountBusy = { identity: false, privacy: false, password: false, email: false }; S.accountErr = { identity: null, privacy: null, password: null, email: null }; S.accountOk = { identity: null, privacy: null, password: null, email: null };
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
-    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null; S.roomOpen = false;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
     S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
     render();
@@ -3674,7 +3792,7 @@
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
     S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null; S.inviteVisible = false; S.accountBusy = { identity: false, privacy: false, password: false, email: false }; S.accountErr = { identity: null, privacy: null, password: null, email: null }; S.accountOk = { identity: null, privacy: null, password: null, email: null };
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
-    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null; S.roomOpen = false;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
     S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
   };

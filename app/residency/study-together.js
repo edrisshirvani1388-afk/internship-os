@@ -30,7 +30,8 @@
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
     historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null, historyRangeMode: "shortcut", historyFromDate: null, historyToDate: null, calYear: null, calMonth: null, histExpanded: null, histSelected: {}, histBulkCourse: null,
     memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
-    leaderboardData: null, leaderboardLoading: false, leaderboardError: null, leaderboardPeriod: "today"
+    leaderboardData: null, leaderboardLoading: false, leaderboardError: null, leaderboardPeriod: "today",
+    offline: false, cacheAt: null, refreshInProgress: false, helpOpen: false, helpPage: null
   };
 
   var _sb = null, _config = null, _sdkPromise = null;
@@ -683,6 +684,7 @@
   }
   function _savePrivacy() {
     if (!S.user || !_sb) return;
+    if (!_requireOnline()) return;
     S.accountBusy.privacy = true;
     S.accountErr.privacy = null;
     S.accountOk.privacy = null;
@@ -732,6 +734,7 @@
   }
   function _saveIdentity() {
     if (!S.user || !_sb) return;
+    if (!_requireOnline()) return;
     var dnEl = S.container.querySelector('[data-account-field="display_name"]');
     var unEl = S.container.querySelector('[data-account-field="username"]');
     if (!dnEl || !unEl) return;
@@ -796,6 +799,7 @@
   }
   function _changeEmail() {
     if (!S.user || !_sb) return;
+    if (!_requireOnline()) return;
     var el = S.container.querySelector('[data-account-field="new_email"]');
     if (!el) return;
     var newEmail = String(el.value || "").trim();
@@ -827,6 +831,7 @@
   }
   function _changePassword() {
     if (!S.user || !_sb) return;
+    if (!_requireOnline()) return;
     var p1 = S.container.querySelector('[data-account-field="new_password"]');
     var p2 = S.container.querySelector('[data-account-field="confirm_password"]');
     if (!p1 || !p2) return;
@@ -1036,7 +1041,8 @@
     });
   }
   function _saveHistory(form) {
-    var sVal = form.querySelector('[name="started_at"]').value;
+    var sVal = form.querySelector
+    if (!_requireOnline()) return;('[name="started_at"]').value;
     var eVal = form.querySelector('[name="ended_at"]').value;
     var rVal = form.querySelector('[name="end_reason"]').value;
     var sIso = _localInputToIso(sVal);
@@ -1402,7 +1408,8 @@
     render();
   }
   function _applyBulkCourse() {
-    var ids = Object.keys(S.histSelected || {}).filter(function (k) { return S.histSelected[k]; });
+    var ids = Object.keys
+    if (!_requireOnline()) return;(S.histSelected || {}).filter(function (k) { return S.histSelected[k]; });
     if (ids.length === 0) { S.historyError = "\u0647\u06CC\u0686 \u062C\u0644\u0633\u0647\u200C\u0627\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u0646\u0634\u062F\u0647"; render(); return; }
     var cid = S.histBulkCourse;
     if (!cid) { S.historyError = "\u06CC\u06A9 \u062F\u0631\u0633 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F"; render(); return; }
@@ -2822,6 +2829,7 @@
   }
   function _saveGroupGoal() {
     if (!S.user || !S.group || !_sb) return;
+    if (!_requireOnline()) return;
     if (S.group.owner_id !== S.user.id) { S.groupGoalError = "\u0641\u0642\u0637 \u0645\u0627\u0644\u06A9 \u06AF\u0631\u0648\u0647"; render(); return; }
     var el = S.container.querySelector('[data-group-goal-input]');
     if (!el) return;
@@ -3274,6 +3282,85 @@
     S.todaySessionCount = count;
     S.lastSessionEndedAt = lastEnd;
   }
+  var K_CACHE_PREFIX = "internship-os.study-together.cache.";
+  function _cacheKey(uid) { return K_CACHE_PREFIX + (uid || "anon") + ".v1"; }
+  function _cacheSave() {
+    try {
+      if (!S.user || !S.user.id || S.phase !== "ready") return;
+      var hist = Array.isArray(S.historySessions) ? S.historySessions.slice(0, 50) : null;
+      var payload = {
+        v: 1, uid: S.user.id, savedAt: Date.now(),
+        profile: S.profile, group: S.group,
+        members: S.members,
+        courses: S.courses,
+        goals: S.goals,
+        streak: S.streak,
+        weeklyTotalSec: S.weeklyTotalSec,
+        weeklyBestDay: S.weeklyBestDay,
+        groupGoalProgress: S.groupGoalProgress,
+        historySessions: hist,
+        todayTotal: S.todayTotal,
+        todaySessionCount: S.todaySessionCount
+      };
+      var str = JSON.stringify(payload);
+      try { localStorage.setItem(_cacheKey(S.user.id), str); }
+      catch (e) {
+        // quota — retry with smaller history
+        try {
+          payload.historySessions = hist ? hist.slice(0, 15) : null;
+          payload.members = (S.members || []).map(function(m){ return { user_id: m.user_id, display_name: m.display_name, username: m.username, avatar_key: m.avatar_key, avatar_url: m.avatar_url, share_daily_total: m.share_daily_total, role: m.role }; });
+          localStorage.setItem(_cacheKey(S.user.id), JSON.stringify(payload));
+        } catch (e2) { try { localStorage.removeItem(_cacheKey(S.user.id)); } catch (e3) {} }
+      }
+    } catch (e) {}
+  }
+  function _cacheLoad(uid) {
+    if (!uid) return null;
+    try {
+      var raw = localStorage.getItem(_cacheKey(uid));
+      if (!raw) return null;
+      var p = JSON.parse(raw);
+      if (!p || p.v !== 1 || p.uid !== uid) return null;
+      return p;
+    } catch (e) { return null; }
+  }
+  function _cacheClear(uid) {
+    if (!uid) return;
+    try { localStorage.removeItem(_cacheKey(uid)); } catch (e) {}
+  }
+  function _cacheApply(p) {
+    if (!p) return;
+    if (p.profile) S.profile = p.profile;
+    if (p.group) S.group = p.group;
+    if (Array.isArray(p.members)) S.members = p.members;
+    if (Array.isArray(p.courses)) S.courses = p.courses;
+    if (p.goals) S.goals = p.goals;
+    if (p.streak) S.streak = p.streak;
+    if (typeof p.weeklyTotalSec === "number") S.weeklyTotalSec = p.weeklyTotalSec;
+    if (p.weeklyBestDay) S.weeklyBestDay = p.weeklyBestDay;
+    if (p.groupGoalProgress) S.groupGoalProgress = p.groupGoalProgress;
+    if (Array.isArray(p.historySessions)) S.historySessions = p.historySessions;
+    if (typeof p.todayTotal === "number") S.todayTotal = p.todayTotal;
+    if (typeof p.todaySessionCount === "number") S.todaySessionCount = p.todaySessionCount;
+    S.cacheAt = p.savedAt || Date.now();
+    S.offline = true;
+    S.phase = "ready";
+  }
+  function _isNetworkError(e) {
+    if (!e) return false;
+    try { if (typeof navigator !== "undefined" && navigator.onLine === false) return true; } catch (x) {}
+    var msg = String(e && e.message ? e.message : e).toLowerCase();
+    if (!msg) return false;
+    if (/network|fetch|timeout|econn|enotfound|offline|failed to fetch|networkerror|socket|closed/.test(msg)) return true;
+    return false;
+  }
+  function _requireOnline() {
+    if (S.offline) {
+      try { notify("warning", "\u0627\u062A\u0635\u0627\u0644 \u0644\u0627\u0632\u0645 \u0627\u0633\u062A \u2014 \u062F\u0631 \u062D\u0627\u0644 \u062D\u0627\u0636\u0631 \u0622\u0641\u0644\u0627\u06CC\u0646 \u0647\u0633\u062A\u06CC\u062F"); } catch (e) {}
+      return false;
+    }
+    return true;
+  }
   function refreshAll() {
     if (!_sb) return Promise.resolve();
     return _sb.auth.getUser().then(function (u) {
@@ -3323,16 +3410,20 @@
                     S.pom = { v: 1, phase: "recovery_required", kind: "open_session", pendingSession: open, marker: pomMarker };
                     S.session = null;
                     S.phase = "ready";
+                    S.offline = false;
                     if (_channel) { broadcastPresence(); } else { joinPresence(); }
                     render();
+                    _cacheSave();
                     // W1-v2 immediate render
                     _loadCourses().then(function () { if (S.phase === "ready" && S.container && S.container.isConnected) render(); });
                     return;
                   }
                   S.session = open || null;
                   S.phase = "ready";
+                  S.offline = false;
                   if (_channel) { broadcastPresence(); } else { joinPresence(); }
                   render();
+                  _cacheSave();
                   // W1-v2 immediate render
                   _loadCourses().then(function () { if (S.phase === "ready" && S.container && S.container.isConnected) render(); });
                 });
@@ -3342,6 +3433,12 @@
         });
       });
     }).catch(function (e) {
+      if (_isNetworkError(e) && S.cacheAt) {
+        S.offline = true;
+        if (S.phase === "init" || S.phase === "error") S.phase = "ready";
+        render();
+        return;
+      }
       S.lastError = String(e && e.message || e);
       S.phase = "error";
       render();
@@ -3362,7 +3459,139 @@
     if (S.phase === "ready")     return renderReady();
     return renderError();
   }
-  function pageWrap(inner) { return '<div class="st-page">' + inner + '</div>'; }
+  function _currentHelpPage() {
+    if (S.roomOpen) return "room";
+    if (S.readyView === "goals") return "goals";
+    if (S.readyView === "settings") return "profile";
+    if (S.readyView === "history") return "history";
+    if (S.navTab === "profile") return "profile";
+    if (S.navTab === "stats") return "stats";
+    if (S.navTab === "friends") return "friends";
+    return "focus";
+  }
+  function _helpContent(page) {
+    var C = {
+      focus: {
+        title: "\u0635\u0641\u062D\u0647\u0654 \u062A\u0645\u0631\u06A9\u0632",
+        intro: "\u0627\u06CC\u0646\u062C\u0627 \u062C\u0644\u0633\u0647\u0654 \u0645\u0637\u0627\u0644\u0639\u0647 \u0634\u0631\u0648\u0639 \u0645\u06CC\u200C\u06A9\u0646\u06CC \u0648 \u0648\u0636\u0639\u06CC\u062A \u0632\u0646\u062F\u0647\u0654 \u0627\u0639\u0636\u0627 \u0631\u0627 \u0645\u06CC\u200C\u0628\u06CC\u0646\u06CC.",
+        sections: [
+          { heading: "\u0634\u0631\u0648\u0639 \u0645\u0637\u0627\u0644\u0639\u0647", body: "\u062F\u06A9\u0645\u0647\u0654 \u00AB\u0634\u0631\u0648\u0639 \u0645\u0637\u0627\u0644\u0639\u0647\u00BB \u06CC\u0627 \u00AB\u0634\u0631\u0648\u0639 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648\u00BB \u0631\u0627 \u0628\u0632\u0646. \u062A\u0627\u06CC\u0645\u0631 \u0634\u0631\u0648\u0639 \u0645\u06CC\u200C\u0634\u0648\u062F \u0648 \u062C\u0644\u0633\u0647 \u062F\u0631 DB \u062B\u0628\u062A \u0645\u06CC\u200C\u0634\u0648\u062F." },
+          { heading: "\u062F\u0631\u0633 \u0641\u0639\u0627\u0644", body: "\u0627\u0632 \u0646\u0648\u0627\u0631 chip\u0647\u0627\u06CC \u0628\u0627\u0644\u0627\u060C \u06CC\u06A9 \u062F\u0631\u0633 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646. \u062C\u0644\u0633\u0647\u0654 \u0628\u0639\u062F\u06CC \u0628\u0647 \u0647\u0645\u0627\u0646 \u062F\u0631\u0633 \u0645\u062A\u0635\u0644 \u0645\u06CC\u200C\u0634\u0648\u062F." },
+          { heading: "\u0627\u0633\u062A\u0631\u0627\u062D\u062A \u0648 \u067E\u0627\u06CC\u0627\u0646", body: "\u062F\u0631 \u062D\u06CC\u0646 \u0645\u0637\u0627\u0644\u0639\u0647\u060C \u00AB\u0627\u0633\u062A\u0631\u0627\u062D\u062A\u00BB \u062C\u0644\u0633\u0647\u0654 \u0641\u0639\u0644\u06CC \u0631\u0627 \u0645\u06CC\u200C\u0628\u0646\u062F\u062F \u0648 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC \u062F\u0648\u0628\u0627\u0631\u0647 \u0634\u0631\u0648\u0639 \u06A9\u0646\u06CC. \u00AB\u067E\u0627\u06CC\u0627\u0646\u00BB \u062C\u0644\u0633\u0647 \u0631\u0627 \u0628\u0647 \u0637\u0648\u0631 \u06A9\u0627\u0645\u0644 \u0645\u06CC\u200C\u0628\u0646\u062F\u062F." },
+          { heading: "\u0647\u062F\u0641 \u0627\u0645\u0631\u0648\u0632", body: "\u06A9\u0627\u0631\u062A \u00AB\u0647\u062F\u0641 \u0627\u0645\u0631\u0648\u0632\u00BB \u062A\u0627 \u0627\u0646\u062A\u0647\u0627\u06CC \u0631\u0648\u0632 \u0646\u0634\u0627\u0646 \u0645\u06CC\u200C\u062F\u0647\u062F \u0686\u0642\u062F\u0631 \u0627\u0632 \u0647\u062F\u0641\u062A \u0631\u0627 \u062A\u06A9\u0645\u06CC\u0644 \u06A9\u0631\u062F\u0647\u200C\u0627\u06CC. \u0628\u0631\u0627\u06CC \u062A\u0639\u06CC\u06CC\u0646/\u0648\u06CC\u0631\u0627\u06CC\u0634 \u0631\u0648\u06CC \u00AB\u0645\u062F\u06CC\u0631\u06CC\u062A\u00BB \u0628\u0632\u0646." }
+        ]
+      },
+      profile: {
+        title: "\u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u0645\u0646",
+        intro: "\u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0634\u062E\u0635\u06CC\u060C \u0627\u0645\u0646\u06CC\u062A \u0648 \u062D\u0631\u06CC\u0645 \u062E\u0635\u0648\u0635\u06CC \u062E\u0648\u062F \u0631\u0627 \u0627\u06CC\u0646\u062C\u0627 \u0645\u062F\u06CC\u0631\u06CC\u062A \u06A9\u0646.",
+        sections: [
+          { heading: "\u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0634\u062E\u0635\u06CC", body: "\u0646\u0627\u0645 \u0646\u0645\u0627\u06CC\u0634\u06CC \u0648 username \u0631\u0627 \u0627\u06CC\u0646\u062C\u0627 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u06A9\u0646. username \u0628\u0627\u06CC\u062F \u06CC\u06AF\u0627\u0646\u06AF\u06CC \u062f\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F." },
+          { heading: "\u0627\u0645\u0646\u06CC\u062A \u062D\u0633\u0627\u0628", body: "\u0627\u06CC\u0645\u06CC\u0644 \u06CC\u0627 \u0631\u0645\u0632 \u0639\u0628\u0648\u0631 \u0631\u0627 \u0627\u06CC\u0646\u062C\u0627 \u062A\u063A\u06CC\u06CC\u0631 \u0628\u062F\u0647. \u0628\u0631\u0627\u06CC \u0627\u06CC\u0645\u06CC\u0644\u060C \u062A\u0623\u06CC\u06CC\u062F \u0627\u06CC\u0645\u06CC\u0644 \u062C\u062F\u06CC\u062F \u0644\u0627\u0632\u0645 \u0627\u0633\u062A." },
+          { heading: "\u062D\u0631\u06CC\u0645 \u062E\u0635\u0648\u0635\u06CC", body: "\u0645\u0634\u062E\u0635 \u06A9\u0646 \u06A9\u062F\u0627\u0645 \u0622\u0645\u0627\u0631\u062A \u0628\u0627 \u062F\u0648\u0633\u062A\u0627\u0646 \u0628\u0647 \u0627\u0634\u062A\u0631\u0627\u06A9 \u06AF\u0630\u0627\u0634\u062A\u0647 \u0634\u0648\u062F. \u062A\u063A\u06CC\u06CC\u0631\u0627\u062A \u0641\u0648\u0631\u0627\u064B \u0627\u0639\u0645\u0627\u0644 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F." },
+          { heading: "\u0622\u0648\u0627\u062A\u0627\u0631", body: "\u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC \u06CC\u06A9 gradient \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC \u06CC\u0627 \u0639\u06A9\u0633 \u062e\u0648\u062F\u062A \u0631\u0627 \u0622\u067E\u0644\u0648\u062F \u06A9\u0646\u06CC (\u062D\u062F\u0627\u06A9\u062B\u0631 \u06F2 \u0645\u06AF\u0627\u0628\u0627\u06CC\u062A)." },
+          { heading: "\u0627\u0633\u062A\u0645\u0631\u0627\u0631 \u0648 \u0627\u0647\u062F\u0627\u0641", body: "\u0628\u062E\u0634 \u00AB\u0627\u0633\u062A\u0645\u0631\u0627\u0631\u00BB \u0631\u0648\u0632\u0647\u0627\u06CC \u0645\u062A\u0648\u0627\u0644\u06CC \u0645\u0637\u0627\u0644\u0639\u0647 \u0631\u0627 \u0646\u0634\u0627\u0646 \u0645\u06CC\u200C\u062F\u0647\u062F. \u0628\u0631\u0627\u06CC \u0647\u062F\u0641 \u0631\u0648\u0632\u0627\u0646\u0647/\u0647\u0641\u062A\u06AF\u06CC\u060C \u00AB\u0645\u062F\u06CC\u0631\u06CC\u062A \u0627\u0647\u062F\u0627\u0641\u00BB \u0631\u0627 \u0628\u0632\u0646." }
+        ]
+      },
+      history: {
+        title: "\u062A\u0627\u0631\u06CC\u062E\u0686\u0647\u0654 \u0645\u0637\u0627\u0644\u0639\u0647",
+        intro: "\u062C\u0644\u0633\u0627\u062A \u06AF\u0630\u0634\u062A\u0647 \u0631\u0627 \u0645\u0631\u0648\u0631 \u06A9\u0646\u060C \u062F\u0631\u0633 \u062A\u0639\u06CC\u06CC\u0646 \u06A9\u0646 \u06CC\u0627 \u0648\u06CC\u0631\u0627\u06CC\u0634 \u0628\u0632\u0646.",
+        sections: [
+          { heading: "\u062A\u0642\u0648\u06CC\u0645 \u0634\u0645\u0633\u06CC", body: "\u0628\u0627 \u06A9\u0644\u06CC\u06A9 \u0631\u0648\u06CC \u0647\u0631 \u0631\u0648\u0632\u060C \u0641\u0642\u0637 \u062C\u0644\u0633\u0627\u062A \u0647\u0645\u0627\u0646 \u0631\u0648\u0632 \u0646\u0645\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F. \u062f\u06A9\u0645\u0647\u0654 \u00AB\u0627\u0645\u0631\u0648\u0632\u00BB \u0628\u0647 \u0631\u0648\u0632 \u062C\u0627\u0631\u06CC \u0628\u0631\u0645\u06CC\u200C\u06AF\u0631\u062F\u062F." },
+          { heading: "\u0628\u0627\u0632\u0647 \u0648 \u0641\u06CC\u0644\u062A\u0631", body: "\u0628\u0627 \u067E\u06CC\u0644\u200C\u0647\u0627\u06CC \u06F7/\u06F3\u06F0/\u06F9\u06F0 \u0631\u0648\u0632 \u06CC\u0627 \u00AB\u0628\u0627\u0632\u0647\u0654 \u062F\u0644\u062E\u0648\u0627\u0647\u00BB \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC \u0628\u0627\u0632\u0647 \u0631\u0627 \u0645\u062D\u062F\u0648\u062F \u06A9\u0646\u06CC. \u0641\u06CC\u0644\u062A\u0631 \u062F\u0631\u0633 \u0647\u0645 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0627\u0633\u062A." },
+          { heading: "\u062F\u0633\u062A\u0647\u200C\u0628\u0646\u062F\u06CC \u06AF\u0631\u0648\u0647\u06CC", body: "\u0686\u0646\u062F \u062C\u0644\u0633\u0647 \u0631\u0627 \u0628\u0627 checkbox \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646 \u0648 \u0627\u0632 \u0646\u0648\u0627\u0631 \u0628\u0627\u0644\u0627\u060C \u062F\u0631\u0633 \u0645\u0642\u0635\u062F \u0631\u0627 \u062a\u0639\u06CC\u06CC\u0646 \u06A9\u0646 \u0648 \u00AB\u0627\u0639\u0645\u0627\u0644\u00BB \u0628\u0632\u0646." },
+          { heading: "\u0648\u06CC\u0631\u0627\u06CC\u0634 \u062C\u0644\u0633\u0647", body: "\u0631\u0648\u06CC \u0647\u0631 \u062C\u0644\u0633\u0647 \u06A9\u0644\u06CC\u06A9 \u06A9\u0646 \u062A\u0627 \u062C\u0632\u0626\u06CC\u0627\u062A \u0628\u0627\u0632 \u0634\u0648\u062F. \u062F\u06A9\u0645\u0647\u0654 \u270F\uFE0F \u0628\u0631\u0627\u06CC \u0648\u06CC\u0631\u0627\u06CC\u0634\u060C \uD83D\uDDD1\uFE0F \u0628\u0631\u0627\u06CC \u062D\u0630\u0641." }
+        ]
+      },
+      stats: {
+        title: "\u0622\u0645\u0627\u0631 \u0645\u0637\u0627\u0644\u0639\u0647",
+        intro: "\u0631\u0648\u0646\u062F \u0645\u0637\u0627\u0644\u0639\u0647\u062A \u0631\u0627 \u062F\u0631 \u0628\u0627\u0632\u0647\u0647\u0627\u06CC \u0645\u062E\u062A\u0644\u0641 \u0628\u0628\u06CC\u0646.",
+        sections: [
+          { heading: "\u0628\u0627\u0632\u0647", body: "\u0627\u0645\u0631\u0648\u0632 / \u06F7 \u0631\u0648\u0632 / \u06F3\u06F0 \u0631\u0648\u0632 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646 \u062A\u0627 \u0646\u0645\u0648\u062F\u0627\u0631\u0647\u0627 \u0648 \u0622\u0645\u0627\u0631 \u0628\u0647\u200C\u0631\u0648\u0632 \u0634\u0648\u0646\u062F." },
+          { heading: "\u0646\u0645\u0648\u062F\u0627\u0631 \u0648 \u06A9\u0627\u0631\u062A\u200C\u0647\u0627", body: "\u0646\u0645\u0648\u062F\u0627\u0631 \u0631\u0648\u0646\u062F\u060C \u0645\u062C\u0645\u0648\u0639 / \u062A\u0639\u062F\u0627\u062F / \u0645\u06CC\u0627\u0646\u06AF\u06CC\u0646 / \u0637\u0648\u0644\u0627\u0646\u06CC\u200C\u062A\u0631\u06CC\u0646 \u062C\u0644\u0633\u0647\u060C \u0628\u0647\u062A\u0631\u06CC\u0646 \u0631\u0648\u0632\u0647\u0627 \u0648 \u062A\u0641\u06A9\u06CC\u06A9 \u062F\u0631\u0633." },
+          { heading: "\u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u062F\u0641", body: "\u0627\u06AF\u0631 \u0647\u062F\u0641 \u0631\u0648\u0632\u0627\u0646\u0647/\u0647\u0641\u062A\u06AF\u06CC \u062A\u0639\u06CC\u06CC\u0646 \u06A9\u0631\u062F\u0647 \u0628\u0627\u0634\u06CC\u060C \u0646\u0648\u0627\u0631 \u067E\u06CC\u0634\u0631\u0641\u062A \u0628\u0627\u0644\u0627\u06CC \u0635\u0641\u062D\u0647 \u0646\u0645\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F." }
+        ]
+      },
+      friends: {
+        title: "\u062F\u0648\u0633\u062A\u0627\u0646",
+        intro: "\u0639\u0636\u0648\u0627\u0646 \u06AF\u0631\u0648\u0647\u060C \u0631\u062A\u0628\u0647\u200C\u0628\u0646\u062F\u06CC \u0647\u0641\u062A\u06AF\u06CC\u060C \u0647\u062F\u0641 \u06AF\u0631\u0648\u0647 \u0648 \u0627\u062A\u0627\u0642 \u0645\u0637\u0627\u0644\u0639\u0647.",
+        sections: [
+          { heading: "\u0647\u062F\u0641 \u0647\u0641\u062A\u06AF\u06CC \u06AF\u0631\u0648\u0647", body: "\u0645\u0627\u0644\u06A9 \u06AF\u0631\u0648\u0647 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u062F \u0647\u062F\u0641 \u0647\u0641\u062A\u06AF\u06CC \u062a\u0639\u06CC\u06CC\u0646 \u06A9\u0646\u062F. \u0646\u0648\u0627\u0631 \u067E\u06CC\u0634\u0631\u0641\u062A \u0627\u0632 \u062C\u0644\u0633\u0627\u062A \u0648\u0627\u0642\u0639\u06CC \u0627\u0639\u0636\u0627 \u0645\u062D\u0627\u0633\u0628\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F." },
+          { heading: "\u0631\u062A\u0628\u0647\u200C\u0628\u0646\u062F\u06CC \u0647\u0641\u062A\u0647", body: "\u0627\u0639\u0636\u0627\u06CC\u06CC \u06A9\u0647 \u0622\u0645\u0627\u0631\u0634\u0627\u0646 \u0631\u0627 \u0628\u0647 \u0627\u0634\u062A\u0631\u0627\u06A9 \u06AF\u0630\u0627\u0634\u062A\u0647\u200C\u0627\u0646\u062F\u060C \u0628\u0631 \u0627\u0633\u0627\u0633 \u0645\u062C\u0645\u0648\u0639 \u0647\u0641\u062A\u0647 \u0631\u062A\u0628\u0647\u200C\u0628\u0646\u062F\u06CC \u0645\u06CC\u200C\u0634\u0648\u0646\u062F. \u0627\u0639\u0636\u0627\u06CC \u067E\u0646\u0647\u0627\u0646 \u0628\u0627 \uD83D\uDD12 \u0646\u0645\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u0646\u062F." },
+          { heading: "\u0627\u062A\u0627\u0642 \u0645\u0637\u0627\u0644\u0639\u0647", body: "\u0628\u0627 \u062F\u06A9\u0645\u0647\u0654 \u00AB\u0648\u0631\u0648\u062F \u0628\u0647 \u0627\u062A\u0627\u0642\u00BB\u060C \u0648\u0636\u0639\u06CC\u062A \u0632\u0646\u062F\u0647\u0654 \u0627\u0639\u0636\u0627 \u0648 \u062A\u0627\u06CC\u0645\u0631 \u0634\u062E\u0635\u06CC \u0631\u0627 \u0628\u0628\u06CC\u0646." },
+          { heading: "\u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u0627\u0639\u0636\u0627", body: "\u0631\u0648\u06CC \u0647\u0631 \u06A9\u0627\u0631\u062A \u06A9\u0644\u06CC\u06A9 \u06A9\u0646 \u062A\u0627 \u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u0648 \u0628\u0631\u0646\u0627\u0645\u0647\u0654 \u0631\u0648\u0632\u0627\u0646\u0647\u0654 \u0627\u0648 (\u062F\u0631 \u0635\u0648\u0631\u062A \u0627\u0634\u062A\u0631\u0627\u06A9) \u0631\u0627 \u0628\u0628\u06CC\u0646\u06CC." }
+        ]
+      },
+      room: {
+        title: "\u0627\u062A\u0627\u0642 \u0645\u0637\u0627\u0644\u0639\u0647",
+        intro: "\u0627\u06CC\u0646\u062C\u0627 \u0628\u0627 \u062F\u0648\u0633\u062A\u0627\u0646 \u0647\u0645\u200C\u0632\u0645\u0627\u0646 \u0645\u0637\u0627\u0644\u0639\u0647 \u0645\u06CC\u200C\u06A9\u0646\u06CC.",
+        sections: [
+          { heading: "\u062A\u0627\u06CC\u0645\u0631 \u0634\u062E\u0635\u06CC", body: "\u062A\u0627\u06CC\u0645\u0631 \u0628\u0632\u0631\u06AF \u0645\u062F\u062A \u062c\u0644\u0633\u0647\u0654 \u062E\u0648\u062F\u062A \u0631\u0627 \u0646\u0634\u0627\u0646 \u0645\u06CC\u200C\u062F\u0647\u062F. \u0627\u06CC\u0646 \u062A\u0627\u06CC\u0645\u0631 \u0628\u0627 \u062A\u0627\u06CC\u0645\u0631 \u0627\u0639\u0636\u0627\u06CC \u062F\u06CC\u06AF\u0631 \u062C\u062F\u0627\u0633\u062A." },
+          { heading: "\u0634\u0631\u0648\u0639 / \u0627\u0633\u062A\u0631\u0627\u062D\u062A / \u067E\u0627\u06CC\u0627\u0646", body: "\u0627\u06AF\u0631 \u062C\u0644\u0633\u0647 \u0641\u0639\u0627\u0644 \u0646\u062F\u0627\u0631\u06CC\u060C \u00AB\u0634\u0631\u0648\u0639 \u0645\u0637\u0627\u0644\u0639\u0647\u00BB. \u0628\u0639\u062F \u0627\u0632 \u0634\u0631\u0648\u0639: \u00AB\u0627\u0633\u062A\u0631\u0627\u062D\u062A\u00BB \u06CC\u0627 \u00AB\u067E\u0627\u06CC\u0627\u0646\u00BB." },
+          { heading: "\u0627\u0639\u0636\u0627\u06CC \u062D\u0627\u0636\u0631", body: "\u0648\u0636\u0639\u06CC\u062A \u0632\u0646\u062F\u0647\u0654 \u0647\u0631 \u0639\u0636\u0648: \u0645\u0637\u0627\u0644\u0639\u0647 / \u0627\u0633\u062A\u0631\u0627\u062D\u062A / \u0628\u06CC\u06A9\u0627\u0631 / \u0642\u0637\u0639 \u0627\u062A\u0635\u0627\u0644." },
+          { heading: "\u062E\u0631\u0648\u062C \u0627\u0632 \u0627\u062A\u0627\u0642", body: "\u062E\u0631\u0648\u062C \u0627\u0632 \u0627\u062A\u0627\u0642 \u062C\u0644\u0633\u0647\u0654 \u0641\u0639\u0627\u0644 \u0631\u0627 \u0646\u0645\u06CC\u200C\u0628\u0646\u062F\u062F. \u0628\u0631\u0627\u06CC \u0628\u0633\u062A\u0646\u060C \u0627\u0628\u062A\u062F\u0627 \u067E\u0627\u06CC\u0627\u0646 \u0631\u0627 \u0628\u0632\u0646." }
+        ]
+      },
+      goals: {
+        title: "\u0627\u0647\u062F\u0627\u0641 \u0645\u0637\u0627\u0644\u0639\u0647",
+        intro: "\u0647\u062F\u0641 \u0631\u0648\u0632\u0627\u0646\u0647 \u0648 \u0647\u0641\u062A\u06AF\u06CC \u0628\u0631\u0627\u06CC \u062E\u0648\u062F\u062A \u0648 \u0647\u0631 \u062F\u0631\u0633 \u062a\u0639\u06CC\u06CC\u0646 \u06A9\u0646.",
+        sections: [
+          { heading: "\u0647\u062F\u0641 \u06A9\u0644\u06CC", body: "\u0647\u062F\u0641 \u0631\u0648\u0632\u0627\u0646\u0647 (\u06F1-\u06F1\u06F4\u06F4\u06F0 \u062F\u0642\u06CC\u0642\u0647) \u0648 \u0647\u0641\u062A\u06AF\u06CC (\u06F1-\u06F1\u06F0\u06F0\u06F8\u06F0 \u062F\u0642\u06CC\u0642\u0647) \u0631\u0627 \u0627\u06CC\u0646\u062C\u0627 \u062a\u0639\u06CC\u06CC\u0646 \u06A9\u0646. \u062D\u062F\u0627\u0642\u0644 \u06CC\u06A9\u06CC \u0644\u0627\u0632\u0645 \u0627\u0633\u062A." },
+          { heading: "\u0647\u062F\u0641 \u062F\u0631\u0633", body: "\u0628\u0631\u0627\u06CC \u0647\u0631 \u062F\u0631\u0633 \u0645\u06CC\u200C\u062A\u0648\u0627\u0646\u06CC \u0647\u062F\u0641 \u062C\u062F\u0627\u06AF\u0627\u0646\u0647 \u062a\u0639\u06CC\u06CC\u0646 \u06A9\u0646\u06CC. \u0627\u06CC\u0646 \u0647\u062F\u0641\u0647\u0627 \u0628\u0627 \u0647\u062F\u0641 \u06A9\u0644\u06CC \u062C\u0645\u0639 \u0646\u0645\u06CC\u200C\u0634\u0648\u0646\u062F." },
+          { heading: "\u0630\u062E\u06CC\u0631\u0647 \u0648 \u062D\u0630\u0641", body: "\u0628\u0639\u062F \u0627\u0632 \u0648\u0627\u0631\u062F \u06A9\u0631\u062F\u0646 \u0645\u0642\u062F\u0627\u0631\u060C \u00AB\u0630\u062E\u06CC\u0631\u0647\u00BB \u0631\u0627 \u0628\u0632\u0646. \u0628\u0631\u0627\u06CC \u062D\u0630\u0641\u060C \u062F\u06A9\u0645\u0647\u0654 \u00AB\u062D\u0630\u0641\u00BB \u0638\u0627\u0647\u0631 \u0645\u06CC\u200C\u0634\u0648\u062F." }
+        ]
+      }
+    };
+    return C[page] || C.focus;
+  }
+  function _renderHelpFab() {
+    if (!S.user || S.phase !== "ready") return "";
+    if (S.helpOpen) return "";
+    return '<button class="st-help-fab" data-st-act="help-open" title="\u0631\u0627\u0647\u0646\u0645\u0627\u06CC \u0627\u06CC\u0646 \u0635\u0641\u062D\u0647" aria-label="\u0631\u0627\u0647\u0646\u0645\u0627">?</button>';
+  }
+  function _renderHelpDialog() {
+    if (!S.helpOpen) return "";
+    var page = S.helpPage || "focus";
+    var content = _helpContent(page);
+    var sectionsHTML = content.sections.map(function (sec, i) {
+      var stepsHTML = "";
+      if (sec.steps && sec.steps.length) {
+        stepsHTML = '<ol class="st-help-steps">' + sec.steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join("") + '</ol>';
+      }
+      return '<div class="st-help-section">' +
+        '<div class="st-help-section-title">' + fa0(i + 1) + '. ' + esc(sec.heading) + '</div>' +
+        '<div class="st-help-section-body">' + esc(sec.body) + '</div>' +
+        stepsHTML +
+      '</div>';
+    }).join("");
+    return '<div class="st-help-overlay" data-st-act="help-close-overlay">' +
+      '<div class="st-help-content" role="dialog" aria-modal="true" aria-labelledby="st-help-title">' +
+        '<div class="st-help-head">' +
+          '<span class="st-help-ico">\u2753</span>' +
+          '<span class="st-help-title" id="st-help-title">' + esc(content.title) + '</span>' +
+          '<button class="st-btn-ghost st-btn-small" data-st-act="help-close" title="\u0628\u0633\u062A\u0646">\u2716</button>' +
+        '</div>' +
+        (content.intro ? '<div class="st-help-intro">' + esc(content.intro) + '</div>' : '') +
+        '<div class="st-help-body">' + sectionsHTML + '</div>' +
+        '<div class="st-help-footer"><button class="st-btn-primary" data-st-act="help-close">\u0641\u0647\u0645\u06CC\u062F\u0645</button></div>' +
+      '</div>' +
+    '</div>';
+  }
+  function _renderOfflineBanner() {
+    if (!S.offline) return "";
+    var t = "";
+    if (S.cacheAt) {
+      try {
+        var d = new Date(S.cacheAt);
+        t = _fmtDateJalali(d.toISOString()) + " " + _toPersianDigits(("0" + d.getHours()).slice(-2)) + ":" + _toPersianDigits(("0" + d.getMinutes()).slice(-2));
+      } catch (e) { t = ""; }
+    }
+    return '<div class="st-offline-bar">' +
+      '<span class="st-offline-ico">\uD83D\uDCE1</span>' +
+      '<span class="st-offline-text">\u0622\u0641\u0644\u0627\u06CC\u0646 \u2014 \u0622\u062E\u0631\u06CC\u0646 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0630\u062E\u06CC\u0631\u0647\u200C\u0634\u062F\u0647 \u0646\u0645\u0627\u06CC\u0634 \u062F\u0627\u062F\u0647 \u0645\u06CC\u200C\u0634\u0648\u062F</span>' +
+      (t ? '<span class="st-offline-at">' + esc(t) + '</span>' : '') +
+    '</div>';
+  }
+  function pageWrap(inner) { return '<div class="st-page">' + _renderOfflineBanner() + inner + _renderHelpFab() + _renderHelpDialog() + '</div>'; }
 
   function renderLoading() {
     S.container.innerHTML = pageWrap('<div class="st-hero"><div class="st-hero-icon">👥</div><h1>هم‌مطالعه</h1></div><div class="st-card st-loading">در حال بارگذاری...</div>');
@@ -3649,7 +3878,8 @@
     return '<div class="st-chart-card"><div class="st-members-title">\uD83C\uDFAF \u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u062F\u0641</div>' + rows + '</div>';
   }
   function _saveGlobalGoal() {
-    var dEl = S.container.querySelector('[data-goal-global-daily]');
+    var dEl = S.container.querySelector
+    if (!_requireOnline()) return;('[data-goal-global-daily]');
     var wEl = S.container.querySelector('[data-goal-global-weekly]');
     var daily = (dEl && String(dEl.value || "").trim()) ? parseInt(dEl.value, 10) : null;
     var weekly = (wEl && String(wEl.value || "").trim()) ? parseInt(wEl.value, 10) : null;
@@ -3670,7 +3900,8 @@
       .catch(function (err) { S.goalsBusy = false; S.goalsError = String(err && err.message || err); render(); });
   }
   function _saveCourseGoal(cid) {
-    var dEl = S.container.querySelector('[data-goal-course-daily="' + cid + '"]');
+    var dEl = S.container.querySelector
+    if (!_requireOnline()) return;('[data-goal-course-daily="' + cid + '"]');
     var wEl = S.container.querySelector('[data-goal-course-weekly="' + cid + '"]');
     var daily = (dEl && String(dEl.value || "").trim()) ? parseInt(dEl.value, 10) : null;
     var weekly = (wEl && String(wEl.value || "").trim()) ? parseInt(wEl.value, 10) : null;
@@ -4080,6 +4311,9 @@
     if (act === "invite-toggle") { _toggleInviteVisibility(); return; }
     if (act === "avatar-remove") { _avatarRemove(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
+    if (act === "help-open") { S.helpPage = _currentHelpPage(); S.helpOpen = true; render(); return; }
+    if (act === "help-close") { S.helpOpen = false; render(); return; }
+    if (act === "help-close-overlay") { if (e.target === t) { S.helpOpen = false; render(); } return; }
     if (act === "group-goal-save") { _saveGroupGoal(); return; }
     if (act === "group-goal-remove") { if (confirm("\u0647\u062F\u0641 \u0647\u0641\u062A\u06AF\u06CC \u06AF\u0631\u0648\u0647 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F")) _removeGroupGoal(); return; }
     if (act === "goals-open") { S.readyView = "goals"; S.goalsError = null; render(); return; }
@@ -4184,6 +4418,7 @@
     });
   }
   function doLogout() {
+    if (S.user && S.user.id) { try { _cacheClear(S.user.id); } catch (e) {} }
     if (_sb) _sb.auth.signOut();
     leavePresence();
     S.user = null; S.profile = null; S.group = null; S.members = []; S.session = null; S.todayTotal = 0;
@@ -4299,7 +4534,7 @@
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null; S.roomOpen = false; S.goals = null; S.streak = null; S.weeklyTotalSec = 0; S.weeklyBestDay = null; S.goalsBusy = false; S.goalsError = null; S.groupGoalProgress = null; S.groupGoalBusy = false; S.groupGoalError = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
-    S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
+    S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today"; S.offline = false; S.cacheAt = null; S.refreshInProgress = false; S.helpOpen = false; S.helpPage = null;
     render();
     loadConfig().then(function (c) {
       if (!c || !c.url || !c.publishableKey) { S.phase = "no-config"; render(); return; }
@@ -4313,10 +4548,24 @@
         return _sb.auth.getSession();
       }).then(function (r) {
         if (!r || !r.data || !r.data.session) { S.phase = "no-auth"; render(); return; }
+        try { var _cached = _cacheLoad(r.data.session.user.id); if (_cached) { _cacheApply(_cached); render(); } } catch (e) {}
         return refreshAll().then(function () { return recoverPending(); }).then(function () {
           _pomAfterOpen();
           _stSessionBooted = true;
           setTimeout(_sharePlanAutoPublish, 500);
+          if (window._stOnlineHandler) { try { window.removeEventListener("online", window._stOnlineHandler); } catch (e) {} }
+          window._stOnlineHandler = function () {
+            if (!S.user || S.refreshInProgress) return;
+            S.refreshInProgress = true;
+            refreshAll().then(function () { S.refreshInProgress = false; }).catch(function () { S.refreshInProgress = false; });
+          };
+          window.addEventListener("online", window._stOnlineHandler);
+          if (window._stOfflineHandler) { try { window.removeEventListener("offline", window._stOfflineHandler); } catch (e) {} }
+          window._stOfflineHandler = function () {
+            S.offline = true;
+            if (S.container && S.container.isConnected) render();
+          };
+          window.addEventListener("offline", window._stOfflineHandler);
         });
       });
     }).catch(function (err) {
@@ -4330,6 +4579,8 @@
     if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
     leavePresence();
     if (_authUnsub) { try { _authUnsub(); } catch (e) {} _authUnsub = null; }
+    if (window._stOnlineHandler) { try { window.removeEventListener("online", window._stOnlineHandler); } catch (e) {} window._stOnlineHandler = null; }
+    if (window._stOfflineHandler) { try { window.removeEventListener("offline", window._stOfflineHandler); } catch (e) {} window._stOfflineHandler = null; }
     S.container = null;
     _connecting = false;
     _reconnectAttempt = 0;
@@ -4350,7 +4601,7 @@
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null; S.roomOpen = false;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
-    S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
+    S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today"; S.offline = false; S.cacheAt = null; S.refreshInProgress = false; S.helpOpen = false; S.helpPage = null;
   };
   ST.status = function () {
     return { phase: S.phase, connection: S.connection, userId: S.user && S.user.id, groupId: S.group && S.group.id, hasSession: !!S.session };

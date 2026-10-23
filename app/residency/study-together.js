@@ -28,7 +28,9 @@
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
     avatarPick: null,
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
-    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null
+    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null,
+    memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
+    leaderboardData: null, leaderboardLoading: false, leaderboardError: null, leaderboardPeriod: "today"
   };
 
   var _sb = null, _config = null, _sdkPromise = null;
@@ -141,7 +143,7 @@
   }
   function qGetProfiles(uids) {
     if (!uids.length) return Promise.resolve([]);
-    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total").in("id", uids).then(function (r) { return r.data || []; });
+    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key").in("id", uids).then(function (r) { return r.data || []; });
   }
   function qGetTodaySessions(gid) {
     var startIso = new Date(_startOfTodayLocalMs()).toISOString();
@@ -193,6 +195,13 @@
   function qDeleteCourse(id, uid) {
     return _sb.from("study_courses").delete()
       .eq("id", id).eq("user_id", uid).select();
+  }
+  function qGetGroupRangeSessions(gid, startIso, endIso) {
+    return _sb.from("study_sessions").select("user_id,client_session_id,started_at,ended_at,end_reason,course_id")
+      .eq("group_id", gid)
+      .gte("started_at", startIso)
+      .lt("started_at", endIso)
+      .then(function (r) { return r.data || []; });
   }
   function qRpc(name, params) { return _sb.rpc(name, params); }
 
@@ -1397,10 +1406,247 @@
     );
     wire();
   }
-  function renderFriendsStub() {
+  function _renderMemberHistoryRow(s) {
+    var start = _fmtTimeShort(s.started_at);
+    var end = _fmtTimeShort(s.ended_at);
+    var durSec = 0;
+    if (s.end_reason !== "crash" && s.ended_at) {
+      durSec = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
+    }
+    var dur = _fmtTimer(durSec);
+    var badge;
+    if (s.end_reason === "crash") badge = '<span class="st-hist-badge st-hist-badge-crash">قطع‌شده</span>';
+    else if (s.end_reason === "break") badge = '<span class="st-hist-badge st-hist-badge-break">استراحت</span>';
+    else badge = '<span class="st-hist-badge st-hist-badge-ended">پایان</span>';
+    var c = _courseById(s.course_id || null);
+    var courseLabel = c ? '<span class="st-course-stat-label ' + _courseColorClass(c) + '"><span class="st-course-dot"></span>' + esc(c.name) + '</span>' : '';
+    return '<div class="st-hist-row">' +
+      '<div class="st-hist-row-main">' +
+        '<span class="st-hist-row-time">' + start + ' — ' + end + '</span>' +
+        '<span class="st-hist-row-dur">' + dur + '</span>' +
+        '<span class="st-hist-row-badges">' + badge + '</span>' +
+        courseLabel +
+      '</div>' +
+    '</div>';
+  }
+  function _openMemberProfile(uid) {
+    if (!uid) return;
+    var member = null;
+    for (var i = 0; i < S.members.length; i++) if (S.members[i].user_id === uid) { member = S.members[i]; break; }
+    if (!member) return;
+    S.memberProfileView = member;
+    S.memberProfileData = null;
+    S.memberProfileError = null;
+    render();
+    _loadMemberProfile(uid);
+  }
+  function _closeMemberProfile() {
+    if (!S.memberProfileView) return;
+    S.memberProfileView = null;
+    S.memberProfileData = null;
+    S.memberProfileError = null;
+    S.memberProfileLoading = false;
+    render();
+  }
+  function _loadMemberProfile(uid) {
+    if (!_sb || !S.user || !S.group) return Promise.resolve();
+    S.memberProfileLoading = true;
+    S.memberProfileError = null;
+    render();
+    var now = new Date();
+    var end = new Date(now); end.setHours(23, 59, 59, 999);
+    var weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 6); weekStart.setHours(0, 0, 0, 0);
+    var todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return qGetGroupRangeSessions(S.group.id, weekStart.toISOString(), end.toISOString())
+      .then(function (rows) {
+        if (!S.memberProfileView || S.memberProfileView.user_id !== uid) return;
+        var myRows = rows.filter(function (s) { return s.user_id === uid; });
+        var todaySec = 0, weekSec = 0, sessionCount = 0;
+        var byCourse = {};
+        myRows.forEach(function (s) {
+          if (!s.ended_at || s.end_reason === "crash") return;
+          var st = new Date(s.started_at).getTime();
+          var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st) / 1000));
+          weekSec += dur;
+          if (st >= todayStartMs) todaySec += dur;
+          sessionCount++;
+          var ck = s.course_id || "none";
+          byCourse[ck] = (byCourse[ck] || 0) + dur;
+        });
+        myRows.sort(function (a, b) { return new Date(b.started_at) - new Date(a.started_at); });
+        S.memberProfileData = {
+          todaySec: todaySec, weekSec: weekSec, sessionCount: sessionCount,
+          byCourse: byCourse, historyRows: myRows.slice(0, 10)
+        };
+        S.memberProfileLoading = false;
+        render();
+      })
+      .catch(function (err) {
+        S.memberProfileError = String(err && err.message || err);
+        S.memberProfileLoading = false;
+        render();
+      });
+  }
+  function _loadLeaderboard() {
+    if (!_sb || !S.user || !S.group) return Promise.resolve();
+    if (S.leaderboardLoading) return Promise.resolve();
+    S.leaderboardLoading = true;
+    S.leaderboardError = null;
+    if (S.navTab === "friends") render();
+    var now = new Date();
+    var end = new Date(now); end.setHours(23, 59, 59, 999);
+    var start = new Date(now);
+    var period = S.leaderboardPeriod;
+    start.setHours(0, 0, 0, 0);
+    if (period === "week") start.setDate(start.getDate() - 6);
+    else if (period === "month") start.setDate(start.getDate() - 29);
+    return qGetGroupRangeSessions(S.group.id, start.toISOString(), end.toISOString())
+      .then(function (rows) {
+        var byUser = {};
+        rows.forEach(function (s) {
+          if (!s.ended_at || s.end_reason === "crash") return;
+          var st = new Date(s.started_at).getTime();
+          var dur = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - st) / 1000));
+          byUser[s.user_id] = (byUser[s.user_id] || 0) + dur;
+        });
+        var lb = (S.members || []).map(function (m) {
+          var isSelf = m.user_id === S.user.id;
+          var shared = isSelf ? true : (m.share_daily_total && byUser[m.user_id] !== undefined);
+          return { member: m, sec: byUser[m.user_id] || 0, shared: shared, isSelf: isSelf };
+        });
+        lb.sort(function (a, b) {
+          if (a.shared !== b.shared) return a.shared ? -1 : 1;
+          return b.sec - a.sec;
+        });
+        S.leaderboardData = lb;
+        S.leaderboardLoading = false;
+        if (S.navTab === "friends") render();
+      })
+      .catch(function (err) {
+        S.leaderboardError = String(err && err.message || err);
+        S.leaderboardLoading = false;
+        if (S.navTab === "friends") render();
+      });
+  }
+  function _leaderboardPeriodPillsHTML() {
+    var opts = [
+      { id: "today", label: "امروز" },
+      { id: "week", label: "۷ روز" },
+      { id: "month", label: "۳۰ روز" }
+    ];
+    return '<div class="st-period-pills st-lb-period">' + opts.map(function (o) {
+      var cls = "st-period-pill" + (S.leaderboardPeriod === o.id ? " is-active" : "");
+      return '<button type="button" class="' + cls + '" data-st-act="lb-period" data-period="' + o.id + '">' + o.label + '</button>';
+    }).join("") + '</div>';
+  }
+  function _renderLeaderboardHTML() {
+    var loading = S.leaderboardLoading || S.leaderboardData === null;
+    var err = S.leaderboardError;
+    var inner;
+    if (loading) inner = '<div class="st-hist-empty">در حال بارگذاری...</div>';
+    else if (err) inner = '<div class="st-error">' + esc(err) + '</div>';
+    else {
+      var rows = S.leaderboardData || [];
+      if (rows.length === 0) {
+        inner = '<div class="st-hist-empty">عضوی برای نمایش نیست</div>';
+      } else {
+        inner = '<div class="st-lb-list">' + rows.map(function (row, idx) {
+          var m = row.member;
+          var initial = (m.display_name || "?").charAt(0);
+          var avKey = m.avatar_key || "av-1";
+          var rankCls = idx === 0 ? "is-rank-1" : idx === 1 ? "is-rank-2" : idx === 2 ? "is-rank-3" : "";
+          var selfCls = row.isSelf ? " is-self" : "";
+          var durStr = row.shared ? _fmtTimer(row.sec) : '<span class="st-muted">—</span>';
+          var label = m.display_name + (m.user_id === S.user.id ? ' <span class="st-m-self">شما</span>' : "");
+          return '<div class="st-lb-row ' + rankCls + selfCls + '">' +
+            '<div class="st-lb-rank">' + (row.shared ? fa0(idx + 1) : '🔒') + '</div>' +
+            '<div class="st-lb-avatar st-avatar-' + esc(avKey) + '">' + esc(initial) + '</div>' +
+            '<div class="st-lb-name">' + esc(m.display_name) + (row.isSelf ? ' <span class="st-m-self">شما</span>' : '') + '</div>' +
+            '<div class="st-lb-dur">' + durStr + '</div>' +
+          '</div>';
+        }).join("") + '</div>';
+      }
+    }
+    return '<div class="st-card st-lb-card">' +
+      '<div class="st-members-title">🏆 رتبه‌بندی گروه</div>' +
+      _leaderboardPeriodPillsHTML() +
+      inner +
+    '</div>';
+  }
+  function _renderMemberProfileHTML() {
+    var view = S.memberProfileView;
+    if (!view) return "";
+    var initial = (view.display_name || "?").charAt(0);
+    var avKey = view.avatar_key || "av-1";
+    var data = S.memberProfileData;
+    var err = S.memberProfileError;
+    var loading = S.memberProfileLoading;
+
+    var body;
+    if (loading) {
+      body = '<div class="st-card st-loading">در حال بارگذاری...</div>';
+    } else if (err) {
+      body = '<div class="st-error">' + esc(err) + '</div>';
+    } else if (!data) {
+      body = '<div class="st-hist-empty">داده‌ای یافت نشد</div>';
+    } else if (!view.share_daily_total && view.user_id !== S.user.id) {
+      body = '<div class="st-privacy-note">🔒 این عضو آمار خود را به اشتراک نمی‌گذارد</div>';
+    } else {
+      var statsHTML =
+        '<div class="st-stats">' +
+          '<div class="st-stat"><span class="st-stat-ico">📊</span><div><div class="st-stat-val">' + _fmtTimer(data.todaySec) + '</div><div class="st-stat-lbl">امروز</div></div></div>' +
+          '<div class="st-stat"><span class="st-stat-ico">📅</span><div><div class="st-stat-val">' + _fmtTimer(data.weekSec) + '</div><div class="st-stat-lbl">۷ روز</div></div></div>' +
+          '<div class="st-stat"><span class="st-stat-ico">🎯</span><div><div class="st-stat-val">' + fa0(data.sessionCount) + '</div><div class="st-stat-lbl">جلسه</div></div></div>' +
+        '</div>';
+      var courseHTML;
+      if (view.user_id === S.user.id || view.share_course_breakdown) {
+        courseHTML = _statsCourseBreakdownHTML(data.byCourse, 5);
+      } else {
+        courseHTML = '<div class="st-muted-note">📊 تفکیک درس به اشتراک گذاشته نشده</div>';
+      }
+      var historyHTML;
+      if (view.user_id === S.user.id || view.share_history_with_group) {
+        historyHTML = data.historyRows.length === 0
+          ? '<div class="st-hist-empty">جلسه‌ای در ۷ روز گذشته نیست</div>'
+          : '<div class="st-hist-groups">' + data.historyRows.map(_renderMemberHistoryRow).join("") + '</div>';
+      } else {
+        historyHTML = '<div class="st-muted-note">📜 تاریخچهٔ کامل به اشتراک گذاشته نشده</div>';
+      }
+      var activityHTML = "";
+      if (view.share_timeline) {
+        var p = null;
+        var pres = presenceState();
+        for (var i = 0; i < pres.length; i++) if (pres[i].key === view.user_id) { p = pres[i]; break; }
+        if (p && p.meta && p.meta.activity_title) {
+          activityHTML = '<div class="st-card"><div class="st-members-title">📖 فعالیت جاری</div><div class="st-m-act-line">' + esc(p.meta.activity_title) + '</div></div>';
+        }
+      }
+      body = statsHTML +
+        activityHTML +
+        '<div class="st-card"><div class="st-members-title">📚 به تفکیک درس</div>' + courseHTML + '</div>' +
+        '<div class="st-card"><div class="st-members-title">📜 تاریخچهٔ اخیر</div>' + historyHTML + '</div>';
+    }
+
+    return '<div class="st-member-profile-overlay" data-st-act="member-close-overlay">' +
+      '<div class="st-member-profile-content">' +
+        '<div class="st-topbar">' +
+          '<div class="st-user-chip">پروفایل</div>' +
+          '<button class="st-btn-ghost st-btn-small" data-st-act="member-close-profile" title="بستن">✖ بستن</button>' +
+        '</div>' +
+        '<div class="st-profile-hero">' +
+          '<div class="st-profile-avatar st-avatar-' + esc(avKey) + '">' + esc(initial) + '</div>' +
+          '<div class="st-profile-info">' +
+            '<div class="st-profile-name">' + esc(view.display_name) + '</div>' +
+            '<div class="st-profile-username">@' + esc(view.username) + '</div>' +
+          '</div>' +
+        '</div>' +
+        body +
+      '</div>' +
+    '</div>';
+  }
+  function renderFriends() {
     var presByKey = {};
     presenceState().forEach(function (p) { presByKey[p.key] = p.meta; });
-    var now = Date.now();
     var cards = (S.members || []).map(function (m) {
       var isSelf = (m.user_id === S.user.id);
       var p = presByKey[m.user_id];
@@ -1408,10 +1654,11 @@
       var label = status === "studying" ? "در حال مطالعه" : status === "break" ? "استراحت" : status === "disconnected" ? "قطع اتصال" : "بیکار";
       var cls = "is-" + status;
       var initial = (m.display_name || "?").charAt(0);
-      return '<div class="st-member ' + cls + '">' +
-        '<div class="st-m-avatar st-m-avatar-' + cls + '">' + esc(initial) + '</div>' +
+      var avKey = m.avatar_key || "av-1";
+      return '<div class="st-member st-member-clickable ' + cls + '" data-st-act="member-open-profile" data-member-id="' + esc(m.user_id) + '" role="button" tabindex="0" title="مشاهدهٔ پروفایل">' +
+        '<div class="st-m-avatar st-m-avatar-' + cls + ' st-avatar-' + esc(avKey) + '">' + esc(initial) + '</div>' +
         '<div class="st-m-body">' +
-          '<div class="st-m-name">' + esc(m.display_name) + (m.role === "owner" ? ' <span class="st-m-owner">مالک</span>' : "") + '</div>' +
+          '<div class="st-m-name">' + esc(m.display_name) + (m.role === "owner" ? ' <span class="st-m-owner">مالک</span>' : "") + (isSelf ? ' <span class="st-m-self">شما</span>' : "") + '</div>' +
           '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + '</div>' +
         '</div>' +
       '</div>';
@@ -1419,8 +1666,10 @@
     S.container.innerHTML = pageWrap(
       _navTabsHTML("friends") +
       '<div class="st-hero st-hero-small"><h1>👥 دوستان</h1><p>' + fa0((S.members||[]).length) + ' عضو</p></div>' +
+      _renderLeaderboardHTML() +
+      '<div class="st-members-title">اعضا</div>' +
       '<div class="st-member-grid">' + cards + '</div>' +
-      '<div class="st-hist-empty" style="margin-top:20px">👤 پروفایل کامل اعضا در Wave 3</div>'
+      (S.memberProfileView ? _renderMemberProfileHTML() : "")
     );
     wire();
   }
@@ -1653,7 +1902,9 @@
                   var pr = pmap[r.user_id] || {};
                   return { user_id: r.user_id, role: r.role, joined_at: r.joined_at,
                     display_name: pr.display_name || "?", username: pr.username || "?",
-                    share_timeline: !!pr.share_timeline, share_daily_total: !!pr.share_daily_total };
+                    share_timeline: !!pr.share_timeline, share_daily_total: !!pr.share_daily_total,
+                    share_course_breakdown: !!pr.share_course_breakdown, share_history_with_group: !!pr.share_history_with_group,
+                    avatar_key: pr.avatar_key || "av-1" };
                 });
                 recomputeTodayTotal(todaySessions);
                 return qFindOwnOpenSession(S.user.id, g.id).then(function (open) {
@@ -1810,7 +2061,7 @@
     if (S.readyView === "history") return (S.historyView === "form") ? renderHistoryForm() : renderHistory();
     if (S.navTab === "profile") return renderProfile();
     if (S.navTab === "stats") return renderStatistics();
-    if (S.navTab === "friends") return renderFriendsStub();
+    if (S.navTab === "friends") return renderFriends();
     var isOwner = S.group && S.profile && S.group.owner_id === S.user.id;
     var presByKey = {};
     presenceState().forEach(function (p) { presByKey[p.key] = p.meta; });
@@ -2076,6 +2327,15 @@
         }
         return;
       }
+      if (nt === "friends") {
+        S.readyView = "main";
+        if (S.leaderboardData === null && !S.leaderboardLoading) {
+          _loadLeaderboard();
+        } else {
+          render();
+        }
+        return;
+      }
       S.readyView = "main";
       render();
       return;
@@ -2086,6 +2346,18 @@
     if (act === "course-delete") { var _dc = t.getAttribute("data-course-id"); if (_dc && confirm("درس حذف شود؟ جلسات مرتبط باقی می‌مانند اما «بدون درس» می‌شوند.")) _deleteCourse(_dc); return; }
     if (act === "profile-save") { doSaveProfile(); return; }
     if (act === "avatar-pick") { S.avatarPick = t.getAttribute("data-avatar-key"); render(); return; }
+    if (act === "member-open-profile") { _openMemberProfile(t.getAttribute("data-member-id")); return; }
+    if (act === "member-close-profile") { _closeMemberProfile(); return; }
+    if (act === "member-close-overlay") { if (e.target === t) _closeMemberProfile(); return; }
+    if (act === "lb-period") {
+      var lbp = t.getAttribute("data-period");
+      if (lbp && lbp !== S.leaderboardPeriod) {
+        S.leaderboardPeriod = lbp;
+        S.leaderboardData = null;
+        _loadLeaderboard();
+      }
+      return;
+    }
     if (act === "stats-period") {
       var sp = t.getAttribute("data-period");
       if (sp !== S.statsPeriod) {
@@ -2277,6 +2549,8 @@
     S.avatarPick = null;
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
+    S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
+    S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
     render();
     loadConfig().then(function (c) {
       if (!c || !c.url || !c.publishableKey) { S.phase = "no-config"; render(); return; }
@@ -2325,6 +2599,8 @@
     S.avatarPick = null;
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
     S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null;
+    S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
+    S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
   };
   ST.status = function () {
     return { phase: S.phase, connection: S.connection, userId: S.user && S.user.id, groupId: S.group && S.group.id, hasSession: !!S.session };

@@ -40,3 +40,6 @@ internship-os-releases/
 docs/_bak-*
 docs/_p*
 audit-26-*/
+
+# Agent audit folders - never commit
+_agent*-audit/

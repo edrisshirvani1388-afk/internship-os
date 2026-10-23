@@ -160,3 +160,149 @@ Modified:
 | Final Regression | ACCEPTED WITH DOCUMENTED LIMITATIONS |
 | Release v0.6.0 | RELEASED |
 | Next phase | Awaiting directive |
+
+---
+
+## For Agent #28
+
+### Environment
+
+- Repo: `D:\Desktop\.internship-os\internship-os`
+- Schema: v22 (no bump)
+- Version: v0.6.0
+- Study Together config: `data/study-together.js` (owner-supplied, outside git)
+
+### Current status
+
+**Study Together V1:** IMPLEMENTATION COMPLETE · LIVE VALIDATION PASS (partial) · RELEASE GATE PENDING
+
+- L08 (offline start) and L10 (offline core) — owner deferred to future
+- Design Agent needs to decide: open/close Release Gate + V2 requests A-F
+
+### What was shipped this session
+
+- Study Together V1 — private realtime study presence (external module, Supabase backend)
+- 14 unit tests, 12 SQL security tests, live validation with 2 accounts
+
+### Critical invariants for Agent #28
+
+- `window.__os` is REASSIGNED in boot() — bridges must merge or poll
+- Realtime: heartbeat 30s, closure capture, exponential backoff
+- `share_*` flags enforced by RLS on `study_sessions`, not UI
+- SQL helpers in `private` schema only (SECURITY DEFINER + SET search_path = '')
+- `service_role` never in client
+- Study Together SQL is validated; do not modify without live retest
+- Core `state.*` never touched by this feature
+
+### Pending Design Agent requests (from owner)
+
+A. Keep-alive heartbeat — prevent Free tier Pause — medium priority, low complexity
+B. Avatar photos (Supabase Storage) — medium/ medium
+C. Pomodoro mode — high/ medium
+D. Multi-day history + manual edit — high/ medium
+E. Offline start-study behavior (A/B/C options) — medium/ low-medium
+F. UI polish (cards, avatar, buttons, copy-code) — high/ low
+
+### Recommended first actions
+
+1. Wait for Design Agent decision on Release Gate + requests A-F
+2. Read docs (order at top of AGENT-28-PROMPT.md)
+3. Verify `data/study-together.js` exists in owner's environment
+4. No autonomous feature work
+
+### Files to read first (order)
+
+1. `docs/AGENT.md` (Session Update · Agent #27)
+2. `docs/AGENT-28-PROMPT.md`
+3. `docs/CURRENT.md` (AGENT-27 CLOSEOUT)
+4. `docs/HANDOFF.md` (this file)
+5. `docs/DECISIONS.md` (ADR-091..094)
+6. `docs/ARCHITECTURE.md` (Study Together V1 section)
+7. `docs/KNOWN_ISSUES.md` (ISSUE-ST-01..03)
+8. `docs/STUDY-TOGETHER.md` (setup guide)
+9. `docs/STUDY-TOGETHER-SQL.sql`
+10. `app/residency/study-together.js`
+11. `docs/POWERSHELL-GUIDE.md`
+
+### Roadmap status
+
+| Phase | Status |
+|---|---|
+| R3 - Replan | CLOSED |
+| R2-H - Polish | CLOSED WITH LIMITATIONS |
+| R2-I - Wizard | CLOSED WITH LIMITATIONS |
+| Workspace Redesign | ACCEPTED |
+| Final Regression | ACCEPTED WITH LIMITATIONS |
+| Release v0.6.0 | RELEASED |
+| Study Together V1 | IMPLEMENTATION COMPLETE · LIVE VALIDATION PASS (partial) · RELEASE GATE PENDING |
+| Next phase | Await Design Agent |
+---
+
+## AGENT-28 CLOSEOUT - 2026-10-23 - V1 Private Pilot + V2 Authorization
+
+**Schema:** v22 (no bump). **Version:** v0.6.0 (no release).
+
+**Authority:** Design Agent decision delegated V1 release gate + V2 scope to Agent #28 for doc updates only.
+
+### V1 - PRIVATE PILOT (OPEN)
+
+Status: `RELEASE GATE: OPEN - PRIVATE PILOT WITH DOCUMENTED LIMITATIONS`
+
+- Authorized: small private group use only
+- L08 / L10: NOT TESTED (owner deferred)
+- No "all scenarios approved" language
+- Connection state must be clearly visible on failure / pause
+- No silent cloud/local merge
+- Single active group (V1)
+- Free tier / no password recovery / no SLA / manual Resume documented
+
+### V2 - Authorized waves
+
+| Wave | Item | Type |
+|---|---|---|
+| 1 | F (UI polish) | Implement now |
+| 1 | C (Pomodoro) | Design contract first, then implement |
+| 2 | D (history + edit) | Design/audit only - no code |
+| 2 | B (avatar) | Design/audit, then implement |
+| - | A (keep-alive) | Limited review only, no periodic heartbeat |
+| - | E (offline) | Decision: Option A (clear message, no local session) |
+
+### V2 constraints
+
+- V2 must NOT modify: RLS, session structure, Schema v22, or state shape - without separate ADR + Design Agent approval.
+- V1's open Release Gate is NOT blanket authorization for infra changes.
+- ADR-091..094 invariants remain in force.
+- Realtime stability (ADR-094): 30s heartbeat cap, closure capture per channel, backoff 3-6-12-24-30, setAuth only on token change, joined-state gate.
+
+### Docs state
+
+Authorized changes (this session):
+- `docs/CURRENT.md` - new AGENT-28 section
+- `docs/HANDOFF.md` - this section
+
+NOT authorized (unchanged):
+- `docs/AGENT.md`
+- `docs/ARCHITECTURE.md`
+
+### Recommended first actions for next agent
+
+1. Read AGENT-28 sections in CURRENT.md and HANDOFF.md.
+2. Begin Wave 1: F (UI polish) - additive only.
+3. C (Pomodoro): produce Design contract FIRST, wait approval, then implement.
+4. D: design/audit only, NO code changes.
+5. A: do not implement periodic heartbeat.
+6. Any infra change (RLS / SQL / Schema / session) - stop, request Design Agent approval.
+
+### Roadmap status
+
+| Phase | Status |
+|---|---|
+| R3 - Replan | CLOSED |
+| R2-H - Polish | CLOSED WITH LIMITATIONS |
+| R2-I - Wizard | CLOSED WITH LIMITATIONS |
+| Workspace Redesign | ACCEPTED |
+| Final Regression | ACCEPTED WITH LIMITATIONS |
+| Release v0.6.0 | RELEASED |
+| Study Together V1 | PRIVATE PILOT - RELEASE GATE OPEN (documented limitations) |
+| Study Together V2 | AUTHORIZED - Wave 1 (F, C) |
+| Next phase | Wave 1 execution |

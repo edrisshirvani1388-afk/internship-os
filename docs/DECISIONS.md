@@ -1666,3 +1666,172 @@ Four sections map directly to that workflow. The Overview section is action-orie
 - `app/styles.css` (`[PATCH:r2w-sections]`)
 
 Tests: 7 unit tests in `workspace-r2w-sections-v18.js::__tests`.
+
+---
+
+## ADR-091 — Study Together: Managed Supabase Backend
+
+Date: 2026-10-23 (Agent #27)
+Status: Accepted (Design Agent approval for V1)
+
+### Decision
+
+Study Together V1 uses Supabase Free (Auth + Postgres + Realtime Presence)
+as the online backend. No personal server, no paid hosting.
+
+### Rationale
+
+- Zero monthly cost target for a small group of friends
+- Managed Postgres + Auth + Realtime in one service
+- RLS provides per-row security without a backend server
+- Free tier adequate for <50 MAU usage pattern
+
+### Contract
+
+- Client uses `@supabase/supabase-js@2.118.0` (pinned), lazy loaded from
+  jsDelivr only when the Study Together tab opens
+- `service_role` key MUST NEVER appear in client code, `data/study-together.js`,
+  or any distributable file
+- Only `publishable` (or legacy `anon`) key is used in client
+- Config lives in `data/study-together.js` (outside git, preserved by installer)
+- Core app remains fully functional when config is absent (UI shows
+  "اتصال آنلاین تنظیم نشده است", no crash)
+
+### Trade-offs / Limitations
+
+- Supabase Free pauses project after 1 week of inactivity → ISSUE-ST-02
+- Free tier has no uptime SLA
+- SMTP not configured for pilot → password recovery disabled in V1
+- Emails are unverified (Confirm email = OFF, owner decision for private pilot)
+
+---
+
+## ADR-092 — Study Together: Additive Module + `_stGetCurrentActivity`
+
+Date: 2026-10-23 (Agent #27)
+Status: Accepted
+
+### Decision
+
+Study Together is implemented as an external IIFE module
+(`app/residency/study-together.js`) following the `fooddb-ui.js` /
+`sleep-ui.js` pattern. It uses `window.__ioStudyTogetherBridge` set by
+`app.js` after the first `renderStudyTogether()` call.
+
+### Contract
+
+- Zero writes to `state.*` and `window.INTERNSHIP_STATE` (read-only access via bridge)
+- Timeline access is read-only via `_stGetCurrentActivity()`:
+  - `R.schedulingProjection.projectDate(state, today, {})` — never mutates
+  - Filters items where `now ∈ [startTime, startTime + durationMinutes)`
+  - Returns `{ title, sourceType, role }` or `null`
+- Bridge is installed lazily (idempotent) — never in `boot()` directly
+- 3 additive points in `app.js`:
+  1. `MAIN_ROUTES` gains `"study-together"`
+  2. `switch (route)` gains `case "study-together": return renderStudyTogether()`
+  3. New functions inserted before `contentRefId`: `renderStudyTogether`,
+     `_studyTogetherBridge`, `_stGetCurrentActivity`
+- `index.html`: nav button + 2 script tags (before `app.js`)
+- `styles.css`: single `[PATCH:study-together]` append, prefix `st-` only
+
+### Rationale
+
+- Zero regression risk to core scheduler / planner / workspace
+- Feature can be removed by deleting 4 new files + reverting 3 additive patches
+- `window.__os` is REASSIGNED in `boot()` (not extended) — bridge must not
+  assume it survives. `study-together-tests.js` uses poll-until-ready pattern.
+
+---
+
+## ADR-093 — Study Together: Client Session Idempotency + Pending Recovery
+
+Date: 2026-10-23 (Agent #27)
+Status: Accepted
+
+### Decision
+
+Each session has a `client_session_id` (UUID) generated client-side before
+insert. DB enforces `unique(user_id, client_session_id)`. Pending state is
+written to `localStorage["internship-os.study-together.pending"]` BEFORE the
+network request, and cleared only after the server confirms.
+
+### Order of operations (start session)
+
+1. Generate `clientSessionId` (crypto.randomUUID)
+2. Write `{ clientSessionId, groupId, startedAt }` to localStorage
+3. Insert to `study_sessions`
+4. If insert fails with unique violation → fetch by client_session_id
+   (reconnect recovery)
+5. On success → clear pending, set `S.session`
+
+### On app restart with a pending record
+
+- `recoverPending()` runs at tab open
+- If session exists on server → resume it silently (no duplicate)
+- If not → clear pending, show normal idle state
+
+### On crash mid-session (server-side open session, no local recovery)
+
+- Next open: `qFindOwnOpenSession()` finds it
+- UI presents it as active (user may end it or ignore)
+- **Never** auto-close silently — user decides
+
+### Rationale
+
+Prevents duplicate rows on network flakiness. The unique constraint is the
+final guarantee — client-side logic is a convenience layer (per Design Agent
+§6 and §11 SQL-08 test).
+
+### Preserved invariants
+
+- `end_reason='ended'` and `end_reason='break'` both count toward today's total
+- `end_reason='crash'` (or missing `ended_at` without active client) does NOT
+  auto-count (per Design Agent §4)
+
+---
+
+## ADR-094 — Study Together: Realtime Presence Stability Rules
+
+Date: 2026-10-23 (Agent #27)
+Status: Accepted
+
+### Decision
+
+The following rules are MANDATORY for any realtime module in this project
+(Study Together is the reference implementation).
+
+### Rules
+
+1. **Heartbeat ≤ 1 per 30 seconds.** Calling `track()` at 1Hz causes Supabase
+   to close the channel silently (no error).
+   Reference: `[st] subscribe status=CLOSED` with no `err=` in logs.
+
+2. **Closure capture per channel.** Each `_sb.channel(topic).subscribe(cb)`
+   MUST capture its own `ch` reference. Stale callbacks MUST check
+   `_channel === ch` before mutating shared state.
+   Without this, reconnect creates loops (old callback nulls the new channel).
+
+3. **Exponential backoff on reconnect.** 3s → 6s → 12s → 24s → 30s cap.
+   Reset attempt counter on successful `SUBSCRIBED`.
+   Never reconnect in tight loop.
+
+4. **`setAuth` only on token change.** Cache `_lastAuthToken`. Skip redundant
+   calls. Realtime auth failures manifest as `CHANNEL_ERROR` with no message.
+
+5. **Private channel per group.** `channel("group:" + group_id, { private: true })`.
+   Public Realtime access MUST be OFF in the Supabase dashboard. RLS on
+   `realtime.messages` gates topic access via
+   `private.is_member_of_topic(topic, auth.uid())`.
+
+6. **Heartbeat vs UI tick must be separated.** The timer display may update
+   at 1Hz (local), but `broadcastPresence()` runs at 30s intervals via its own
+   timer (`_heartbeatTimer`).
+
+7. **`broadcastPresence` MUST check `_channel.state === "joined"`** before
+   calling `track()` — otherwise SDK throws silently on closed channels.
+
+### Consequences
+
+- Stable presence in 2-3 user tests after applying these rules
+- Without these rules: `CLOSED` loops every ~1-2 seconds, presence disappears
+- Anyone implementing a new realtime feature MUST follow ADR-094

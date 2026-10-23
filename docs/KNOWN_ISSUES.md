@@ -897,3 +897,48 @@ Status: OPEN (documented). Non-blocking.
 - State integrity: SHA256 + reference identity + signature all preserved
 - Protected contracts: all intact
 - Cleanup: ~575 MB of stale backups removed; 7 state backups kept
+
+
+---
+
+## Session Update — 2026-10-23 · Agent #27 · Study Together V1
+
+### ISSUE-ST-01 — UI supports one study group only
+Status: Open (V1 design limit)
+Severity: Low
+Area: study-together.js `qGetMembership` uses `.limit(1)`
+Context: The RLS correctly exposes all groups the user belongs to, but the
+  UI picks the first one. In tests, 2 groups were accidentally created; only
+  one is reachable from the UI. This is NOT a security issue — RLS returns
+  only groups the user is a member of.
+Next: V2 — add group selector (part of owner request F or dedicated scope).
+
+### ISSUE-ST-02 — Supabase Free project pauses after 1 week of inactivity
+Status: Open (operational)
+Severity: Medium
+Area: Supabase infrastructure (not client code)
+Context: Free tier pauses the project after 7 days with no activity. Users
+  cannot connect until owner Restore via Supabase Dashboard. Not a data-loss
+  event — the project resumes with all data intact.
+Next: Owner request A (keep-alive heartbeat when app is open) — pending
+  Design Agent approval.
+
+### ISSUE-ST-03 — Offline start-study behavior undefined
+Status: Open (design pending)
+Severity: Medium
+Area: `doStart()` in study-together.js
+Context: If user taps "شروع مطالعه" while offline, insert fails. UI shows
+  error, but there is no clear guidance. Three options under design review:
+    A) clear error + retry button (current direction)
+    B) local-first + sync on reconnect (with `_offline: true` marker)
+    C) disable button while offline
+Next: Design Agent decision (owner request E).
+
+### Session notes (Agent #27)
+
+- 14/14 unit tests PASS
+- 12 SQL security tests PASS (L08 / L10 owner-deferred)
+- Live validation with 2 real accounts PASS (presence + timer + privacy)
+- Schema v22 UNCHANGED (196 / 156 / 22)
+- `window.INTERNSHIP_STATE` untouched
+- All PowerShell/JS patches applied via backup + verify + rollback pattern

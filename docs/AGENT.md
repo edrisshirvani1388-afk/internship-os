@@ -554,3 +554,77 @@ Schema: v22 (no bump). Version: v0.6.0.
 
 Last Completed: v0.6.0 release.
 Awaiting: Design Agent directive for next phase.
+
+## Session Update (2026-10-23 · Agent #27) — Study Together V1
+
+Schema: v22 (no bump). Version: v0.6.0 (no release — feature release-gated).
+
+### Shipped (feature-complete, live-validated)
+
+Study Together V1 — private realtime study presence for a small group of friends.
+External module `app/residency/study-together.js` (1.0.0).
+Supabase Free backend (Auth + Postgres + Realtime Presence).
+Live validation: PASS (2 real accounts, presence + timer + privacy).
+Release Gate: PENDING Design Agent decision.
+
+### New invariants (enforce in future patches)
+
+- `window.__os` is REASSIGNED in `boot()` (lines ~17792 and ~17821). NOT extended.
+  Any new bridge must either merge into boot() or poll until `window.__os.getState`
+  exists (pattern in `study-together-tests.js`).
+- Realtime presence: heartbeat 30s maximum. Calling `track()` at 1Hz causes
+  Supabase to close the channel with no error.
+- Realtime closure capture: each `channel.subscribe()` callback must capture
+  its own `ch` reference. Stale callbacks MUST check `_channel === ch` before
+  mutating state. Without this, reconnect loops occur.
+- Exponential backoff on reconnect: 3s → 6s → 12s → 24s → 30s cap.
+- `setAuth` only when token changes (`_lastAuthToken` cache).
+- `share_daily_total` and `share_timeline` are enforced at DB layer
+  (RLS `sessions_self_or_group_read`), not just UI. A non-member reading
+  another user's sessions through direct SQL gets 0 rows.
+- SQL helper functions live in `private` schema with `SECURITY DEFINER`,
+  `SET search_path = ''`, `revoke from public, anon`, `grant only to authenticated`.
+- Do NOT run `ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY` — Supabase enables it.
+  Just add RLS policies for `realtime.messages`.
+- Client SDK: `@supabase/supabase-js@2.118.0` (pinned), lazy loaded from jsDelivr
+  only when the tab opens. Never at boot.
+
+### Files (new, additive)
+
+- `docs/STUDY-TOGETHER-SQL.sql` — Schema + RLS + RPC + Realtime policy
+- `docs/STUDY-TOGETHER.md` — setup guide (Persian)
+- `app/residency/study-together.js` — external module (IIFE)
+- `app/residency/study-together-tests.js` — test bridge with deferred install
+- `data/study-together.js` — config (OWNER-supplied, outside git)
+- `app/app.js` — +70 lines (MAIN_ROUTES, switch, render, bridge, activity fn)
+- `app/index.html` — nav button + 2 script tags
+- `app/styles.css` — `[PATCH:study-together]` append, prefix `st-` only
+
+### Known limitations (accepted, documented)
+
+- ISSUE-ST-01 — UI supports one group only (LOW)
+- ISSUE-ST-02 — Supabase Free Pause after 1 week idle (MEDIUM, operational)
+- ISSUE-ST-03 — Offline start-study behavior undefined (design pending)
+- L08 / L10 — NOT TESTED (owner deferred)
+
+### Deferred requests (require Design Agent approval)
+
+A. Keep-alive heartbeat — prevent Free tier pause — medium/ low complexity
+B. Avatar photos (Supabase Storage) — medium/ medium
+C. Pomodoro mode — high/ medium
+D. Multi-day session history + manual edit — high/ medium
+E. Offline start-study behavior (A/B/C options) — medium/ low-medium
+F. UI polish (cards, avatar, buttons, copy-code) — high/ low
+
+### PowerShell lessons (added this session)
+
+- `'...'` in PowerShell is LITERAL — backtick-n is two literal chars, not
+  newline. For multi-line anchors use `@'...'@` here-string with
+  `.Replace("`r`n","`n")` OR segment-based `IndexOf` + `Substring`.
+- Verification must be SEGMENT-SCOPED: `$v.Substring($start, $len).Contains(...)`,
+  not global `$v.Contains(...)`. Global Contains gave 3 false positives this session.
+- Always `[Text.UTF8Encoding]::new($false)` for read AND write.
+- Node `--check` after every write. `$LASTEXITCODE` must be explicit.
+
+Last Completed: Study Together V1 implementation + live validation.
+Awaiting: Design Agent decision on Release Gate + V2 features A-F.

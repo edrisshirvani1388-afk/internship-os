@@ -275,3 +275,131 @@ Schema v22, window.INTERNSHIP_STATE, Store/Domain, Timeline/Constraints/Calendar
 Await Design Agent directive. No autonomous feature work.
 
 Release: v0.6.0 SHIPPED - no active release gate.
+
+
+---
+
+## AGENT-27 CLOSEOUT — 2026-10-23 — Study Together V1
+
+**Schema:** v22 (no bump). **Version:** v0.6.0 (no release).
+
+### Study Together V1 — IMPLEMENTATION COMPLETE · LIVE VALIDATION PASS (partial)
+
+Feature: private realtime study presence for a small group of friends.
+Scope: auth, private group, presence, timer, current-activity share.
+
+| Test | Status |
+|---|---|
+| Unit tests (14) | PASS |
+| Live: 2 accounts, presence, timer, privacy | PASS |
+| SQL security (12) | PASS (L08/L10 deferred by owner) |
+| Schema v22 | UNCHANGED |
+| INTERNSHIP_STATE | UNCHANGED (196 / 156 / 22) |
+
+### Files Added
+
+- `app/residency/study-together.js` (~36000 bytes)
+- `app/residency/study-together-tests.js` (1072 bytes)
+- `docs/STUDY-TOGETHER.md` (4586 bytes)
+- `docs/STUDY-TOGETHER-SQL.sql` (~20182 bytes)
+
+### Files Modified (additive only)
+
+- `app/app.js` — MAIN_ROUTES + switch + renderStudyTogether + _studyTogetherBridge + _stGetCurrentActivity
+- `app/index.html` — nav button + 2 script tags
+- `app/styles.css` — `[PATCH:study-together]` append
+
+### Config (owner-supplied, outside git)
+
+- `data/study-together.js` — url + publishableKey + sdkVersion
+
+### Known Limitations
+
+- ISSUE-ST-01 — UI supports one group only (LOW)
+- ISSUE-ST-02 — Supabase Free Pause after 1 week idle (MEDIUM, operational)
+- ISSUE-ST-03 — Offline start-study behavior undefined (design pending)
+- L08 / L10 — NOT TESTED (owner deferred)
+
+### Release Gate
+
+PENDING Design Agent decision.
+
+### Next
+
+Await Design Agent decision on Release Gate + V2 feature requests A-F.
+---
+
+## AGENT-28 - 2026-10-23 - V1 PRIVATE PILOT RELEASE GATE
+
+**Schema:** v22 (no bump). **Version:** v0.6.0 (no release).
+
+**Decision by:** Design Agent. Doc updates delegated to Agent #28.
+
+### V1 Status - PRIVATE PILOT
+
+`RELEASE GATE: OPEN - PRIVATE PILOT WITH DOCUMENTED LIMITATIONS`
+
+Study Together V1 authorized for restricted private use (small group of friends only).
+
+### Enforced limitations
+
+- L08 (offline disconnect/reconnect): NOT TESTED
+- L10 (core app offline behavior in final scenario): NOT TESTED
+- No "all release scenarios approved" language
+- No claim of full offline stability or reconnect reliability
+- Silent cloud/local merge without user awareness: FORBIDDEN
+- Single active group per account (V1) - no extra group/data removal without owner decision
+- Free tier limits, password recovery disabled, no SLA, manual Resume may be required
+
+### V2 decision matrix
+
+| Item | Decision |
+|---|---|
+| A - Keep-alive | DENIED as periodic high-frequency heartbeat. Limited review scope only (on-open / on-activity). |
+| B - Avatar photos | APPROVED for V2 - Design/Audit first, then implementation. |
+| C - Pomodoro mode | APPROVED - high priority. Design contract first, then implementation. |
+| D - Multi-day history + manual edit | V2 Design/Audit only. NO implementation until separate approval. |
+| E - Offline behavior | Option A selected: clear message only. No local session, no sync queue. |
+| F - UI polish | APPROVED - Wave 1. Additive only, no data/SQL/session/Schema change. |
+
+### V2 execution order
+
+**Wave 1**
+1. F - UI polish (additive, low-risk)
+2. C - Design contract, then Pomodoro implementation
+
+**Wave 2**
+3. D - Design contract only (no code)
+4. B - Storage + privacy design, then implementation
+
+**Separate review**
+- A - limited scope only, no periodic background heartbeat
+
+**Closed**
+- E - decision: no offline sync in V1 scope
+
+### Constraints for V2 work
+
+- V2 must NOT alter RLS, session structure, or Schema v22 without separate approval.
+- V1's open Release Gate does NOT authorize RLS/session structure changes.
+- `service_role` never in client (unchanged).
+- SQL helpers in `private` schema only (unchanged).
+- Realtime invariants (ADR-094) remain in force.
+
+### Docs - what changed and what did not
+
+Authorized and used:
+- `docs/CURRENT.md` (this section)
+- `docs/HANDOFF.md` (Agent #28 closeout section)
+
+NOT authorized - unchanged:
+- `docs/AGENT.md`
+- `docs/ARCHITECTURE.md`
+
+Technical lessons (boot() reassign, Realtime stability, verification patterns) recorded only in CURRENT/HANDOFF until separate architecture-doc approval.
+
+### Next
+
+- Wave 1 begins (F then C).
+- D contract authoring may begin in parallel (no code).
+- Any change touching RLS / SQL / Schema / session requires separate ADR + Design Agent approval.

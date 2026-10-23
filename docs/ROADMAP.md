@@ -560,3 +560,41 @@ Candidates (not authorized yet):
 - Legacy cleanup: workspace-v13.js + .pw13-* (needs authorization)
 - CSS mass cleanup / styles.css split (needs authorization)
 - Next product phase (awaiting Design Agent)
+
+
+---
+
+## STUDY TOGETHER V1 — 2026-10-23 — Agent #27
+
+**Status:** IMPLEMENTATION COMPLETE · LIVE VALIDATION PASS (partial) · RELEASE GATE PENDING
+
+**Scope:**
+- Private realtime study presence (small group of friends)
+- Supabase Free (Auth + Postgres + Realtime Presence)
+- External module, zero state mutation, offline-first preserved
+
+**Delivered:**
+- `app/residency/study-together.js` (external module)
+- `app/residency/study-together-tests.js` (test bridge)
+- `docs/STUDY-TOGETHER.md` (setup guide)
+- `docs/STUDY-TOGETHER-SQL.sql` (schema + RLS + RPC)
+- `app/app.js` +70 lines (additive)
+- `app/index.html` +5 lines
+- `app/styles.css` `[PATCH:study-together]`
+- `data/study-together.js` (owner-supplied, outside git)
+
+**Tests:**
+- Unit: 14/14 PASS
+- SQL Security: 12/12 PASS (L08/L10 deferred)
+- Live Multi-User: PASS (2 accounts, presence + timer + privacy)
+- Schema v22: UNCHANGED
+- INTERNSHIP_STATE: UNCHANGED (196 / 156 / 22)
+
+**Known limitations:**
+- ISSUE-ST-01, ISSUE-ST-02, ISSUE-ST-03
+
+**Pending Design Agent decision:**
+- Release Gate (open / close)
+- V2 requests A-F (owner-driven)
+
+## NEXT PHASE — Await Design Agent

@@ -1,3 +1,63 @@
+## [0.6.1] — 2026-10-23 — Study Together V1
+
+### Added
+
+- Study Together V1 — private realtime study presence for a small group of friends
+  - External module `app/residency/study-together.js` (IIFE, ~36000 bytes)
+  - Test bridge `app/residency/study-together-tests.js`
+  - Nav button + 2 script tags in `app/index.html`
+  - `[PATCH:study-together]` CSS block (prefix `st-` only)
+  - 5 new functions in `app/app.js`: `renderStudyTogether`, `_studyTogetherBridge`,
+    `_stGetCurrentActivity`, plus MAIN_ROUTES and switch case updates (~70 lines)
+  - `docs/STUDY-TOGETHER.md` — Persian setup guide
+  - `docs/STUDY-TOGETHER-SQL.sql` — schema + RLS + RPC + Realtime policy
+  - `data/study-together.js` — config (owner-supplied, outside git)
+
+### Backend
+
+- Supabase Free (Auth + Postgres + Realtime Presence)
+- 4 tables: profiles, study_groups, study_group_members, study_sessions
+- 5 RPCs: create_study_group, join_study_group, leave_study_group,
+  delete_study_group, revoke_invite_code
+- 4 helper functions in `private` schema (SECURITY DEFINER, search_path = '')
+- RLS on all tables + realtime.messages
+- `share_daily_total` and `share_timeline` enforced at DB layer
+
+### Client SDK
+
+- `@supabase/supabase-js@2.118.0` (pinned, lazy-loaded from jsDelivr)
+- Config via `data/study-together.js` (url + publishableKey + sdkVersion)
+
+### Fixed
+
+- Presence stability (ADR-094): heartbeat 30s max, closure capture, exponential
+  backoff, setAuth dedupe, channel state guard
+- PowerShell verification pattern: segment-scoped instead of global Contains
+- `window.__os` reassignment in boot() — bridge now polls until ready
+
+### Tests
+
+- Unit: 14/14 PASS
+- SQL Security: 12/12 PASS
+- Live Multi-User: PASS (2 accounts + 1 non-member)
+- Schema v22 UNCHANGED
+- INTERNSHIP_STATE UNCHANGED (196 tasks / 156 activities)
+
+### Known Limitations
+
+- ISSUE-ST-01: UI supports one group only
+- ISSUE-ST-02: Supabase Free pause after 1 week idle
+- ISSUE-ST-03: offline start-study behavior undefined
+- L08, L10 — NOT TESTED (owner deferred)
+
+### Pending
+
+- Design Agent decision on Release Gate
+- V2 requests A-F (owner-driven)
+
+### Schema
+
+- v22 (no bump)
 # Changelog
 
 All notable changes to Internship OS are documented here.

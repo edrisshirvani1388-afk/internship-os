@@ -1061,7 +1061,7 @@
       return;
     }
 
-    const MAIN_ROUTES = ["dashboard","calendar","planner","clinical","study","emergency","procedures","residency","progress","data","help"];
+    const MAIN_ROUTES = ["dashboard","calendar","planner","clinical","study","emergency","procedures","residency","study-together","progress","data","help"];
     const isAreaId = LIFE_AREAS.some((a) => a.id === actualRoute);
     if (isAreaId && MAIN_ROUTES.indexOf(actualRoute) === -1) {
       param = actualRoute;
@@ -1106,6 +1106,7 @@
       case "progress":  return renderProgress();
       case "data":      return renderData();
       case "help":      return renderHelp();
+      case "study-together": return renderStudyTogether();
       case "area-detail": return renderAreaDetail(routeParam);
     }
   }
@@ -6194,7 +6195,60 @@ function _updateDashBell() {
   /* ╔═══ [PATCH:content-engine] ═══╗ */
   /* موتور عمومی Content — Study / Emergency / Procedures */
 
-  function contentRefId(areaId, sourceType, sourceId) {
+    /* ═══ Study Together V1 (external module) ═══ */
+  function renderStudyTogether() {
+    var R = window.InternshipResidency;
+    if (!R || !R.studyTogether || typeof R.studyTogether.open !== "function") {
+      view.innerHTML = '<div class="placeholder"><span class="placeholder-icon">👥</span><h2>ماژول هم‌مطالعه در دسترس نیست</h2></div>';
+      return;
+    }
+    _studyTogetherBridge();
+    try { R.studyTogether.open(view); } catch (e) {
+      view.innerHTML = '<div class="placeholder"><span class="placeholder-icon">⚠️</span><h2>خطا در بارگذاری هم‌مطالعه</h2><p>' + escapeHTML(String(e && e.message || e)) + '</p></div>';
+    }
+    document.title = "هم‌مطالعه — Internship OS";
+  }
+  function _studyTogetherBridge() {
+    if (window.__ioStudyTogetherBridge) return;
+    window.__ioStudyTogetherBridge = {
+      state: function () { return state; },
+      notify: _notifyApp,
+      escapeHtml: escapeHTML,
+      fa0: _fa0,
+      fa1: _fa1,
+      faNum: faNum,
+      todayJalali: todayJalali,
+      setRoute: setRoute,
+      getCurrentActivity: _stGetCurrentActivity
+    };
+  }
+  function _stGetCurrentActivity() {
+    try {
+      var R = window.InternshipResidency;
+      if (!R || !R.schedulingProjection || typeof R.schedulingProjection.projectDate !== "function") return null;
+      var s = window.__os && window.__os.getState ? window.__os.getState() : null;
+      if (!s) return null;
+      var today = todayJalali();
+      var items = R.schedulingProjection.projectDate(s, today, {}) || [];
+      var now = new Date();
+      var nowMin = now.getHours() * 60 + now.getMinutes();
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (!it || !it.startTime || !it.durationMinutes) continue;
+        var p = String(it.startTime).split(":");
+        if (p.length !== 2) continue;
+        var hh = parseInt(p[0], 10), mm = parseInt(p[1], 10);
+        if (!isFinite(hh) || !isFinite(mm)) continue;
+        var st = hh * 60 + mm;
+        var en = st + it.durationMinutes;
+        if (nowMin >= st && nowMin < en) {
+          return { title: it.title || "", sourceType: it.sourceType || "", role: it.role || "" };
+        }
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+function contentRefId(areaId, sourceType, sourceId) {
     return areaId + "::" + sourceType + "::" + sourceId;
   }
 

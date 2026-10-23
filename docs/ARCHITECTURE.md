@@ -1370,3 +1370,154 @@ window.INTERNSHIP_STATE read-only.
 
 `workspace-v13.js` + `.pw13-*` CSS remain in repo, not loaded. Removal requires
 independent authorization.
+
+
+---
+
+## Study Together V1 (Phase ST-1) — Agent #27 · 2026-10-23
+
+### Purpose
+
+Private realtime study presence for a small group of friends.
+NOT a social network. No chat, no feed, no public discovery.
+Name in UI: **هم‌مطالعه**.
+
+### Scope (V1, frozen)
+
+- Email/password auth (unconfirmed email for private pilot)
+- One private study group per account (data model supports multiple)
+- Invite code join (12-char, guessable ≈ 48 bits entropy)
+- Three states: studying / break / idle
+- Timer (start / break / resume / end)
+- Today's total = sum of ended intervals (including break closes)
+- Optional read-only Timeline share (title only, never details)
+- Optional today-total share
+
+### Backend: Supabase Free
+
+- Postgres tables: `profiles`, `study_groups`, `study_group_members`,
+  `study_sessions`
+- Auth: Email/Password (Confirm email = OFF for pilot)
+- Realtime Presence on private channel `group:<uuid>`
+- RLS on all four tables + `realtime.messages`
+- Helper functions in `private` schema (SECURITY DEFINER, search_path = '')
+
+### Files
+
+| File | Role |
+|---|---|
+| `app/residency/study-together.js` | External IIFE module |
+| `app/residency/study-together-tests.js` | Test bridge (deferred install) |
+| `docs/STUDY-TOGETHER.md` | Setup guide (Persian) |
+| `docs/STUDY-TOGETHER-SQL.sql` | Schema + RLS + RPC + Realtime policy |
+| `data/study-together.js` | Config (owner-supplied, outside git) |
+| `app/app.js` | +70 lines additive (routes, render, bridge) |
+| `app/index.html` | Nav button + 2 script tags |
+| `app/styles.css` | `[PATCH:study-together]` append, prefix `st-` |
+
+### Public API (module namespace)
+
+    R.studyTogether.open(container)      // render into container
+    R.studyTogether.close()              // teardown realtime + timers
+    R.studyTogether.status()             // { phase, connection, userId, groupId, hasSession }
+    R.studyTogether.__tests()            // 14 unit tests
+
+### Bridge (set by app.js, idempotent)
+
+    window.__ioStudyTogetherBridge = {
+      state(), notify(level, msg), escapeHtml(s), fa0(n), fa1(n), faNum(n),
+      todayJalali(), setRoute(route), getCurrentActivity()
+    }
+
+### Runtime state (S, module-internal)
+
+    S = {
+      phase: "init" | "no-config" | "no-sdk" | "error" | "no-auth" | "no-group" | "ready",
+      user, profile, group, members,
+      session,           // active own session or null
+      todayTotal,        // seconds
+      pendingClientId,   // from localStorage, resolved at open
+      connection: "online" | "offline",
+      container,         // DOM root
+      formTab, busy, lastError
+    }
+
+### Persistence
+
+- **No writes to `state.*`** — feature is entirely external to Internship OS state
+- Pending session key: `localStorage["internship-os.study-together.pending"]`
+  = `{ clientSessionId, groupId, startedAt }` | null
+- Auth session: managed by SDK at `localStorage["sb-<ref>-auth-token"]`
+
+### Session lifecycle
+
+    startSession()     → INSERT (user_id, group_id, client_session_id, started_at)
+                         → unique constraint prevents dup
+    startBreak()       → UPDATE ended_at, end_reason="break"
+    resumeSession()    → startSession() again
+    endSession()       → UPDATE ended_at, end_reason="ended"
+
+    todayTotal = Σ (ended_at - started_at) where started_at >= local midnight
+                 including end_reason in {ended, break}
+                 excluding open sessions without local S.session
+
+### Realtime presence (per ADR-094)
+
+- Channel topic: `group:<group_id>` (private: true)
+- Heartbeat: `track()` at 30s intervals max (`_heartbeatTimer`)
+- UI timer updates at 1Hz separately (no network)
+- Payload = `{ display_name, status, session_started_at?, today_total_seconds?, activity_title? }`
+- `share_daily_total` gates `today_total_seconds`
+- `share_timeline` gates `activity_title`
+- Presence key = user's UUID (stable identity across tabs)
+
+### RLS policy summary
+
+| Table | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| profiles | self OR same-group | self only | self only | — |
+| study_groups | member | RPC only | owner | owner |
+| study_group_members | self OR same-group | RPC only | — | self OR owner |
+| study_sessions | self OR (same-group AND owner has share_daily_total) | self AND member-of-group | self only | self only |
+| realtime.messages | member of topic | member of topic | — | — |
+
+### Security invariants
+
+1. `service_role` never in client — checked before each release
+2. All 4 tables have RLS enabled
+3. All policies grant to `authenticated` only (never `anon` or `public`)
+4. RPC functions: `SECURITY DEFINER` + `SET search_path = ''` + full schema names
+5. `share_daily_total` and `share_timeline` enforced at DB layer, not just UI
+6. Non-member cannot read group data even with group UUID
+7. Invite code is not the group UUID, ≥48 bits entropy
+8. Revoked invite code cannot be used to join
+
+### Testing surface
+
+- Unit: `R.studyTogether.__tests()` — 14 tests, no network
+- SQL: 12 tests documented in `docs/STUDY-TOGETHER.md` §5, §8, §9
+- Live: 2 accounts + 1 non-member, L01-L11
+
+### Known limitations (V1)
+
+- ISSUE-ST-01: UI one group only
+- ISSUE-ST-02: Supabase Free pause after 1 week idle
+- ISSUE-ST-03: offline start-study behavior TBD
+- L08, L10 NOT TESTED (owner deferred)
+
+### What NOT to touch
+
+- `state.*`, `window.INTERNSHIP_STATE`, Schema v22
+- `round-scheduler-v22.js`, `planner-replan-apply-v7.js`,
+  `scheduling-conflict-v20.js` RULES
+- `_postWire` chain order (10 layers)
+- ADR-081 hard-delete gate
+
+### V2 requests (owner, pending Design Agent)
+
+A. Keep-alive heartbeat (prevent Free tier Pause)
+B. Avatar photos (Supabase Storage)
+C. Pomodoro mode
+D. Multi-day session history + manual edit
+E. Offline start-study behavior (A/B/C)
+F. UI polish (cards, avatar, buttons, copy-code, status badges)

@@ -1,9 +1,9 @@
 {
-    "publishedAt":  "2026-10-22",
-    "releaseNotes":  "Workspace 4-section (Overview / Plan / Review \u0026 Change / Analysis)\nR3 Replan Engine\nR2-I Wizard Redesign\nR2-H Polish + Accessibility\n578/578 tests - Schema v22",
-    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.6.0/InternshipOS-Setup-v0.6.0.exe",
-    "sha256":  "601765D3BEC869E6A9758C742236C98A2741107DB4517EC4744FEB08AAA1A21D",
-    "sizeBytes":  58831475,
-    "latest":  "0.6.0",
-    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v0.6.0/InternshipOS-Setup-v0.6.0.exe"
+    "publishedAt":  "2026-10-23",
+    "releaseNotes":  "Internship OS 1.0.0 — Study Together Private Pilot\n\nIncludes Study Together 1.0.0: Live room, Focus Studio, Profile+avatar, History (Jalali calendar + bulk categorize), Statistics, Goals, Streaks, Weekly Leaderboard, Group weekly goal, Shared daily plan, Per-page help, Offline resilience.\n\nData reset: schema/RLS/triggers/migrations preserved.\n\nDefault Supabase config embedded for fresh installs.\n\nPRIVATE PILOT limitations: two-account room NOT TESTED, physical internet cut NOT TESTED, SMTP disabled, cross-account cache isolation NOT TESTED.",
+    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.0/InternshipOS-Setup-v1.0.0.exe",
+    "sha256":  "A75A4BCB804AE7A74E183C70AC481332C807FB0E5CADA81794A59681F9E23994",
+    "sizeBytes":  58885393,
+    "latest":  "1.0.0",
+    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.0/InternshipOS-Setup-v1.0.0.exe"
 }

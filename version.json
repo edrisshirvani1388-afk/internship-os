@@ -1,13 +1,17 @@
 {
-    "version":  "0.6.1",
-    "schema":  22,
-    "releasedAt":  "2026-10-23",
-    "notes":  "Study Together V1 — implementation complete · live validation pass (partial) · release gate pending",
     "highlights":  [
-                       "Study Together V1 — private realtime study presence (Supabase Free)",
-                       "Presence stability (ADR-094): 30s heartbeat, backoff, closure capture",
-                       "SQL security: 12/12 PASS · Unit: 14/14 PASS · Live: PASS",
-                       "Schema v22 unchanged · INTERNSHIP_STATE unchanged (196/156)",
-                       "Release gate pending Design Agent decision"
-                   ]
+                       "Internship OS 1.0.0 — Study Together Private Pilot",
+                       "",
+                       "Includes Study Together 1.0.0: Live room, Focus Studio, Profile+avatar, History (Jalali calendar + bulk categorize), Statistics, Goals, Streaks, Weekly Leaderboard, Group weekly goal, Shared daily plan, Per-page help, Offline resilience.",
+                       "",
+                       "Data reset: schema/RLS/triggers/migrations preserved.",
+                       "",
+                       "Default Supabase config embedded for fresh installs.",
+                       "",
+                       "PRIVATE PILOT limitations: two-account room NOT TESTED, physical internet cut NOT TESTED, SMTP disabled, cross-account cache isolation NOT TESTED."
+                   ],
+    "schema":  22,
+    "version":  "1.0.0",
+    "releasedAt":  "2026-10-23",
+    "notes":  "v1.0.0"
 }

@@ -9,6 +9,9 @@
   if (!R) { console.warn("[study-together] R missing"); return; }
 
   var ST = R.studyTogether = R.studyTogether || {};
+  function _stDbg() {
+    try { return window.__ST_DEBUG__ === true; } catch (e) { return false; }
+  }
   ST.VERSION = "1.0.0";
 
   var K_PENDING = "internship-os.study-together.pending";
@@ -688,7 +691,6 @@
     S.accountBusy.privacy = true;
     S.accountErr.privacy = null;
     S.accountOk.privacy = null;
-    render();
     var get = function (k) { var el = S.container.querySelector('[data-st-setting="' + k + '"]'); return el ? !!el.checked : false; };
     var _newAvatar = S.avatarPick || (S.profile && S.profile.avatar_key) || "av-1";
     var bioEl = S.container.querySelector('[data-st-bio]');
@@ -709,8 +711,10 @@
       updated_at: new Date().toISOString()
     };
     if (_newBio !== null) patch.bio = (_newBio || null);
-    _sb.from("profiles").update(patch).eq("id", S.user.id).then(function (r) {
+    render();
+    _sb.from("profiles").update(patch).eq("id", S.user.id).select().single().then(function (r) {
       if (r && r.error) throw r.error;
+      if (!r || !r.data) throw new Error("\u0630\u062E\u06CC\u0631\u0647 \u062F\u0631 DB \u0627\u0639\u0645\u0627\u0644 \u0646\u0634\u062F (\u062F\u0633\u062A\u0631\u0633\u06CC \u06CC\u0627 \u067E\u0631\u0648\u0641\u0627\u06CC\u0644)");
       S.accountBusy.privacy = false;
       S.accountOk.privacy = "\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F";
       if (S.profile) {
@@ -753,9 +757,10 @@
         if (rr.data && rr.data.length > 0) {
           throw new Error("\u0627\u06CC\u0646 \u0646\u0627\u0645 \u06A9\u0627\u0631\u0628\u0631\u06CC \u0627\u0632 \u0642\u0628\u0644 \u0627\u062E\u062A\u0635\u0627\u0635 \u06CC\u0627\u0641\u062A\u0647");
         }
-        return _sb.from("profiles").update({ display_name: dn, username: un, updated_at: new Date().toISOString() }).eq("id", S.user.id);
+        return _sb.from("profiles").update({ display_name: dn, username: un, updated_at: new Date().toISOString() }).eq("id", S.user.id).select().single();
       }).then(function (r) {
         if (r && r.error) throw r.error;
+        if (!r || !r.data) throw new Error("\u0630\u062E\u06CC\u0631\u0647 \u062F\u0631 DB \u0627\u0639\u0645\u0627\u0644 \u0646\u0634\u062F");
         S.profile.display_name = dn;
         S.profile.username = un;
         for (var i = 0; i < S.members.length; i++) {
@@ -780,8 +785,9 @@
     S.accountErr.identity = null;
     S.accountOk.identity = null;
     render();
-    _sb.from("profiles").update({ display_name: dn, updated_at: new Date().toISOString() }).eq("id", S.user.id).then(function (r) {
+    _sb.from("profiles").update({ display_name: dn, updated_at: new Date().toISOString() }).eq("id", S.user.id).select().single().then(function (r) {
       if (r && r.error) throw r.error;
+      if (!r || !r.data) throw new Error("\u0630\u062E\u06CC\u0631\u0647 \u062F\u0631 DB \u0627\u0639\u0645\u0627\u0644 \u0646\u0634\u062F");
       S.profile.display_name = dn;
       for (var i = 0; i < S.members.length; i++) {
         if (S.members[i].user_id === S.user.id) S.members[i].display_name = dn;
@@ -2326,7 +2332,7 @@
     S.sharePlanBusy = true;
     S.sharePlanError = null;
     render();
-    _sb.from("profiles").update({ share_daily_plan: !!checked, updated_at: new Date().toISOString() }).eq("id", S.user.id)
+    _sb.from("profiles").update({ share_daily_plan: !!checked, updated_at: new Date().toISOString() }).eq("id", S.user.id).select().single()
       .then(function (r) {
         if (r && r.error) throw r.error;
         if (S.profile) S.profile.share_daily_plan = !!checked;
@@ -3143,18 +3149,18 @@
   /* ─── Presence ─── */
   function joinPresence() {
     if (!_sb || !S.group || !S.user) return;
-    if (_connecting) { console.log("[st] joinPresence: already connecting, skip"); return; }
+    if (_connecting) { if (_stDbg()) console.log("[st] joinPresence: already connecting, skip"); return; }
     _connecting = true;
     leavePresence();
     _sb.auth.getSession().then(function (r) {
       var token = r && r.data && r.data.session && r.data.session.access_token;
       if (token && token !== _lastAuthToken) {
-        try { _sb.realtime.setAuth(token); _lastAuthToken = token; console.log("[st] realtime.setAuth OK (changed)"); }
-        catch (e) { console.log("[st] realtime.setAuth EXC:", e && e.message); }
+        try { _sb.realtime.setAuth(token); _lastAuthToken = token; if (_stDbg()) console.log("[st] realtime.setAuth OK (changed)"); }
+        catch (e) { if (_stDbg()) console.log("[st] realtime.setAuth EXC:", e && e.message); }
       } else if (token) {
-        console.log("[st] realtime.setAuth skipped (token unchanged)");
+        if (_stDbg()) console.log("[st] realtime.setAuth skipped (token unchanged)");
       } else {
-        console.log("[st] realtime.setAuth skipped (no token)");
+        if (_stDbg()) console.log("[st] realtime.setAuth skipped (no token)");
       }
       var ch;
       try {
@@ -3162,31 +3168,31 @@
           config: { private: true, presence: { key: S.user.id, enabled: true } }
         });
       } catch (e) {
-        console.log("[st] channel() EXC:", e && e.message);
+        if (_stDbg()) console.log("[st] channel() EXC:", e && e.message);
         _connecting = false;
         S.connection = "offline"; render(); return;
       }
       _channel = ch;
       ch.on("presence", { event: "sync" }, function () {
-        if (_channel !== ch) { console.log("[st] presence sync (stale, ignored)"); return; }
+        if (_channel !== ch) { if (_stDbg()) console.log("[st] presence sync (stale, ignored)"); return; }
         var st = presenceState();
-        console.log("[st] presence sync; total=" + st.length);
+        if (_stDbg()) console.log("[st] presence sync; total=" + st.length);
         try { render(); } catch (e) {}
       });
       ch.on("presence", { event: "join" }, function (p) {
         if (_channel !== ch) return;
-        console.log("[st] presence join key=" + (p && p.key));
+        if (_stDbg()) console.log("[st] presence join key=" + (p && p.key));
         try { render(); } catch (e) {}
       });
       ch.on("presence", { event: "leave" }, function (p) {
         if (_channel !== ch) return;
-        console.log("[st] presence leave key=" + (p && p.key));
+        if (_stDbg()) console.log("[st] presence leave key=" + (p && p.key));
         try { render(); } catch (e) {}
       });
       ch.subscribe(function (status, err) {
-        if (_channel !== ch) { console.log("[st] subscribe status=" + status + " (stale, ignored)"); return; }
+        if (_channel !== ch) { if (_stDbg()) console.log("[st] subscribe status=" + status + " (stale, ignored)"); return; }
         var em = (err && (err.message || String(err))) || "";
-        console.log("[st] subscribe status=" + status + (em ? " err=" + em : ""));
+        if (_stDbg()) console.log("[st] subscribe status=" + status + (em ? " err=" + em : ""));
         if (status === "SUBSCRIBED") {
           _connecting = false;
           _reconnectAttempt = 0;
@@ -3203,7 +3209,7 @@
       });
     }).catch(function (e) {
       _connecting = false;
-      console.log("[st] joinPresence getSession EXC:", e && e.message);
+      if (_stDbg()) console.log("[st] joinPresence getSession EXC:", e && e.message);
       schedulePresenceReconnect();
     });
   }
@@ -3213,19 +3219,19 @@
     if (S.phase !== "ready") return;
     _reconnectAttempt++;
     var delay = Math.min(30000, 3000 * Math.pow(2, _reconnectAttempt - 1));
-    console.log("[st] scheduling reconnect in " + delay + "ms (attempt " + _reconnectAttempt + ")");
+    if (_stDbg()) console.log("[st] scheduling reconnect in " + delay + "ms (attempt " + _reconnectAttempt + ")");
     _reconnectTimer = setTimeout(function () {
       _reconnectTimer = null;
       if (!S.user || !S.group) return;
       if (S.phase !== "ready") return;
-      console.log("[st] attempting presence reconnect #" + _reconnectAttempt);
+      if (_stDbg()) console.log("[st] attempting presence reconnect #" + _reconnectAttempt);
       joinPresence();
     }, delay);
   }
   
   function leavePresence() {
     if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
-    if (_channel) { var old = _channel; _channel = null; console.log("[st] leavePresence: unsubscribing"); try { old.unsubscribe(); } catch (e) {} }
+    if (_channel) { var old = _channel; _channel = null; if (_stDbg()) console.log("[st] leavePresence: unsubscribing"); try { old.unsubscribe(); } catch (e) {} }
     S.connection = "offline";
   }
   function broadcastPresence() {
@@ -3242,9 +3248,9 @@
       var res = _channel.track(payload);
       if (res && typeof res.then === "function") {
         res.then(function () { /* silent */ })
-           .catch(function (e) { console.log("[st] track FAIL:", e && e.message); });
+           .catch(function (e) { if (_stDbg()) console.log("[st] track FAIL:", e && e.message); });
       }
-    } catch (e) { console.log("[st] track EXC:", e && e.message); }
+    } catch (e) { if (_stDbg()) console.log("[st] track EXC:", e && e.message); }
   }
   function presenceState() {
     if (!_channel) return [];
@@ -4414,42 +4420,42 @@
     var password = _val(form, "password");
     if (!email || !password) { S.lastError = "email_and_password_required"; render(); return; }
     S.busy = true; S.lastError = null; render();
-    console.log("[st] doAuth: start tab=" + S.formTab);
+    if (_stDbg()) console.log("[st] doAuth: start tab=" + S.formTab);
     ensureClient().then(function () {
-      console.log("[st] doAuth: client ready");
+      if (_stDbg()) console.log("[st] doAuth: client ready");
       if (S.formTab === "signup") {
         var username = _val(form, "username");
         var displayName = _val(form, "displayName");
         if (!username || !displayName) { S.busy = false; S.lastError = "all_fields_required"; render(); return; }
-        console.log("[st] doAuth: calling signUp");
+        if (_stDbg()) console.log("[st] doAuth: calling signUp");
         return _withTimeout(_sb.auth.signUp({ email: email, password: password }), 20000, "signUp").then(function (r) {
-          console.log("[st] doAuth: signUp resolved; hasError=" + !!(r && r.error));
+          if (_stDbg()) console.log("[st] doAuth: signUp resolved; hasError=" + !!(r && r.error));
           if (r.error) throw r.error;
           if (!r.data || !r.data.user) throw new Error("signUp_no_user");
           var uid = r.data.user.id;
-          console.log("[st] doAuth: upsertProfile start uid=" + uid);
+          if (_stDbg()) console.log("[st] doAuth: upsertProfile start uid=" + uid);
           return _withTimeout(qUpsertProfile(uid, username, displayName), 20000, "upsertProfile").then(function (pr) {
             if (pr && pr.error) throw pr.error;
-            console.log("[st] doAuth: upsertProfile OK");
+            if (_stDbg()) console.log("[st] doAuth: upsertProfile OK");
           });
         });
       } else {
-        console.log("[st] doAuth: calling signIn");
+        if (_stDbg()) console.log("[st] doAuth: calling signIn");
         return _withTimeout(_sb.auth.signInWithPassword({ email: email, password: password }), 20000, "signIn").then(function (r) {
-          console.log("[st] doAuth: signIn resolved; hasError=" + !!(r && r.error));
+          if (_stDbg()) console.log("[st] doAuth: signIn resolved; hasError=" + !!(r && r.error));
           if (r.error) throw r.error;
         });
       }
     }).then(function () {
-      console.log("[st] doAuth: refreshAll start");
+      if (_stDbg()) console.log("[st] doAuth: refreshAll start");
       S.busy = false;
       return _withTimeout(refreshAll(), 25000, "refreshAll");
     }).then(function () {
-      console.log("[st] doAuth: DONE");
+      if (_stDbg()) console.log("[st] doAuth: DONE");
       S.busy = false;
       render();
     }).catch(function (err) {
-      console.log("[st] doAuth: FAILED " + (err && err.message));
+      if (_stDbg()) console.log("[st] doAuth: FAILED " + (err && err.message));
       S.busy = false;
       if (err && err.__ioTimeout) {
         S.lastError = "operation_timeout: " + (err.message || "");
@@ -4606,7 +4612,7 @@
             } catch (e) {}
             S.user = null; S.profile = null; S.phase = "no-auth"; render(); return;
           }
-          if (event === "SIGNED_IN" && session && session.user) { console.log("[st] auth event: SIGNED_IN"); setTimeout(function () { try { refreshAll(); } catch (e) {} }, 50); }
+          if (event === "SIGNED_IN" && session && session.user) { if (_stDbg()) console.log("[st] auth event: SIGNED_IN"); setTimeout(function () { try { refreshAll(); } catch (e) {} }, 50); }
         });
         _authUnsub = function () { try { sub.data.subscription.unsubscribe(); } catch (e) {} };
         return _sb.auth.getSession();
@@ -4868,5 +4874,5 @@
     return { passed: pass, total: results.length, results: results };
   };
 
-  console.log("[study-together] loaded v" + ST.VERSION);
+  if (_stDbg()) console.log("[study-together] loaded v" + ST.VERSION);
 })();

@@ -1454,7 +1454,7 @@
     var headerCommon =
       _navTabsHTML("history") +
       '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(S.profile.display_name) + '</div>' +
+        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' ' + _connChipHTML() + '</div>' +
       '</div>' +
       '<div class="st-hero st-hero-small"><h1>📜 تاریخچهٔ مطالعه</h1></div>' +
       _renderHistCalendar() +
@@ -1526,7 +1526,7 @@
     S.container.innerHTML = pageWrap(
       _navTabsHTML("history") +
       '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(S.profile.display_name) + '</div>' +
+        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' ' + _connChipHTML() + '</div>' +
       '</div>' +
       '<div class="st-hero st-hero-small"><h1>' + (isEdit ? "✏️ ویرایش جلسه" : "➕ افزودن جلسهٔ دستی") + '</h1></div>' +
       '<form class="st-form st-hist-form" data-st-act="hist-form">' +
@@ -1817,8 +1817,7 @@
     S.container.innerHTML = pageWrap(
       _navTabsHTML("profile") +
       '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(p.display_name) + ' <span class="st-conn st-conn-' + S.connection + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646") + '</span></div>' +
-        '<button class="st-btn-ghost st-btn-small" data-st-act="logout" title="\u062E\u0631\u0648\u062C">\uD83D\uDEAA \u062E\u0631\u0648\u062C</button>' +
+        '<div class="st-user-chip">' + esc(p.display_name) + ' <span class="st-conn st-conn-' + (S.offline ? "offline" : S.connection) + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + ((S.offline ? "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646" : ((S.offline ? "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646" : (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646"))))) + '</span></div>' +
       '</div>' +
       '<div class="st-hero st-hero-small"><h1>\u2699\uFE0F \u062D\u0633\u0627\u0628 \u0645\u0646</h1></div>' +
       '<div class="st-account-hero">' +
@@ -1843,7 +1842,15 @@
       _avatarPickerHTML(avatarKey) +
       '<div class="st-members-title">\uD83D\uDCDD \u062F\u0631\u0628\u0627\u0631\u0647\u0654 \u0645\u0646</div>' +
       '<div class="st-card st-settings-card"><textarea class="st-bio-edit" data-st-bio maxlength="200" rows="3" placeholder="\u062A\u0648\u0636\u06CC\u062D \u06A9\u0648\u062A\u0627\u0647">' + esc(p.bio || "") + '</textarea></div>' +
-      groupSection
+      groupSection +
+      '<div class="st-account-section">' +
+        '<div class="st-account-section-head">' +
+          '<div class="st-account-section-icon">\uD83D\uDEAA</div>' +
+          '<div><div class="st-account-section-title">\u062E\u0631\u0648\u062C \u0627\u0632 \u062D\u0633\u0627\u0628</div>' +
+          '<div class="st-account-section-desc">\u067E\u0627\u06CC\u0627\u0646 \u0646\u0634\u0633\u062A \u062F\u0631 \u0627\u06CC\u0646 \u062F\u0633\u062A\u06AF\u0627\u0647</div></div>' +
+        '</div>' +
+        '<div class="st-account-actions"><button class="st-btn-danger" data-st-act="logout">\uD83D\uDEAA \u062E\u0631\u0648\u062C \u0627\u0632 \u062D\u0633\u0627\u0628</button></div>' +
+      '</div>'
     );
     wire();
   }
@@ -2085,6 +2092,7 @@
 
     S.container.innerHTML = pageWrap(
       _navTabsHTML("stats") +
+      '<div class="st-topbar"><div class="st-user-chip">' + esc((S.profile && S.profile.display_name) || "?") + ' ' + _connChipHTML() + '</div></div>' +
       '<div class="st-hero st-hero-small"><h1>📊 آمار</h1></div>' +
       _statsPeriodPillsHTML() +
       (err ? '<div class="st-error">' + esc(err) + '</div>' : "") +
@@ -3077,6 +3085,7 @@
     }).join("");
     S.container.innerHTML = pageWrap(
       _navTabsHTML("friends") +
+      '<div class="st-topbar"><div class="st-user-chip">' + esc((S.profile && S.profile.display_name) || "?") + ' ' + _connChipHTML() + '</div></div>' +
       '<div class="st-hero st-hero-small"><h1>👥 دوستان</h1><p>' + fa0((S.members||[]).length) + ' عضو</p></div>' +
       _renderGroupGoalCard() +
     _renderWeeklyLeaderboard() +
@@ -3283,6 +3292,7 @@
     S.lastSessionEndedAt = lastEnd;
   }
   var K_CACHE_PREFIX = "internship-os.study-together.cache.";
+  var K_LASTUID = "internship-os.study-together.lastuid";
   function _cacheKey(uid) { return K_CACHE_PREFIX + (uid || "anon") + ".v1"; }
   function _cacheSave() {
     try {
@@ -3303,14 +3313,19 @@
         todaySessionCount: S.todaySessionCount
       };
       var str = JSON.stringify(payload);
-      try { localStorage.setItem(_cacheKey(S.user.id), str); }
+      var _saved = false;
+      try { localStorage.setItem(_cacheKey(S.user.id), str); _saved = true; }
       catch (e) {
-        // quota — retry with smaller history
         try {
           payload.historySessions = hist ? hist.slice(0, 15) : null;
           payload.members = (S.members || []).map(function(m){ return { user_id: m.user_id, display_name: m.display_name, username: m.username, avatar_key: m.avatar_key, avatar_url: m.avatar_url, share_daily_total: m.share_daily_total, role: m.role }; });
           localStorage.setItem(_cacheKey(S.user.id), JSON.stringify(payload));
+          _saved = true;
         } catch (e2) { try { localStorage.removeItem(_cacheKey(S.user.id)); } catch (e3) {} }
+      }
+      if (_saved) {
+        try { localStorage.setItem(K_LASTUID, S.user.id); } catch (e4) {}
+        S.cacheAt = payload.savedAt;
       }
     } catch (e) {}
   }
@@ -3364,7 +3379,31 @@
   function refreshAll() {
     if (!_sb) return Promise.resolve();
     return _sb.auth.getUser().then(function (u) {
-      if (!u || !u.data || !u.data.user) { S.phase = "no-auth"; render(); return; }
+      if (!u || !u.data || !u.data.user) {
+        var _guErr = u && u.error;
+        if ((_guErr && _isNetworkError(_guErr)) || (typeof navigator !== "undefined" && navigator.onLine === false)) {
+          if (S.cacheAt) {
+            S.offline = true;
+            if (S.phase === "init" || S.phase === "error") S.phase = "ready";
+            render();
+            return;
+          }
+          try {
+            var _luGU = localStorage.getItem(K_LASTUID);
+            if (_luGU) {
+              var _ccGU = _cacheLoad(_luGU);
+              if (_ccGU) {
+                if (!S.user) S.user = { id: _luGU, email: (_ccGU.profile && _ccGU.profile.email) || "" };
+                _cacheApply(_ccGU);
+                S.offline = true;
+                render();
+                return;
+              }
+            }
+          } catch (e) {}
+        }
+        S.phase = "no-auth"; render(); return;
+      }
       S.user = { id: u.data.user.id, email: u.data.user.email };
       return qGetProfile(S.user.id).then(function (p) {
         if (!p) { S.phase = "no-auth"; render(); return; }
@@ -3591,6 +3630,11 @@
       (t ? '<span class="st-offline-at">' + esc(t) + '</span>' : '') +
     '</div>';
   }
+  function _connChipHTML() {
+    var conn = S.offline ? "offline" : S.connection;
+    var label = (S.offline || S.connection !== "online") ? "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646" : "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646";
+    return '<span class="st-conn st-conn-' + conn + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + label + '</span>';
+  }
   function pageWrap(inner) { return '<div class="st-page">' + _renderOfflineBanner() + inner + _renderHelpFab() + _renderHelpDialog() + '</div>'; }
 
   function renderLoading() {
@@ -3785,7 +3829,7 @@
 
     S.container.innerHTML = pageWrap(
       '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' <span class="st-conn st-conn-' + S.connection + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646") + '</span></div>' +
+        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' <span class="st-conn st-conn-' + (S.offline ? "offline" : S.connection) + '" title="\u0648\u0636\u0639\u06CC\u062A \u0627\u062A\u0635\u0627\u0644">' + ((S.offline ? "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646" : ((S.offline ? "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646" : (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646"))))) + '</span></div>' +
         '<button class="st-btn-ghost st-btn-small" data-st-act="room-close" title="\u062E\u0631\u0648\u062C \u0627\u0632 \u0627\u062A\u0627\u0642">\uD83D\uDEAA \u062E\u0631\u0648\u062C</button>' +
       '</div>' +
       '<div class="st-hero st-hero-small"><h1>\uD83C\uDFAF \u0627\u062A\u0627\u0642 \u0645\u0637\u0627\u0644\u0639\u0647\u0654 ' + esc(S.group.name) + '</h1></div>' +
@@ -4057,8 +4101,7 @@
     S.container.innerHTML = pageWrap(
       _navTabsHTML("focus") +
       '<div class="st-topbar">' +
-        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' <span class="st-conn st-conn-' + S.connection + '" title="وضعیت اتصال">' + (S.connection === "online" ? "● آنلاین" : "○ آفلاین") + '</span></div>' +
-        '<button class="st-btn-ghost st-btn-small" data-st-act="logout" title="خروج از حساب">🚪 خروج</button>' +
+        '<div class="st-user-chip">' + esc(S.profile.display_name) + ' <span class="st-conn st-conn-' + (S.offline ? "offline" : S.connection) + '" title="وضعیت اتصال">' + ((S.offline ? "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646" : (S.connection === "online" ? "\u25CF \u0622\u0646\u0644\u0627\u06CC\u0646" : "\u25CB \u0622\u0641\u0644\u0627\u06CC\u0646"))) + '</span></div>' +
       '</div>' +
       _courseChipsHTML() +
       '<div class="st-hero st-hero-small"><h1>' + esc(S.group.name) + '</h1></div>' +
@@ -4162,7 +4205,7 @@
     if (!t) return;
     var act = t.getAttribute("data-st-act");
     if (act === "tab") { S.formTab = t.getAttribute("data-st-tab") || "login"; S.lastError = null; render(); return; }
-    if (act === "logout") { doLogout(); return; }
+    if (act === "logout") { if (confirm("\u0627\u0632 \u062D\u0633\u0627\u0628 \u062E\u0648\u062F \u062E\u0627\u0631\u062C \u0645\u06CC\u200C\u0634\u0648\u06CC\u062F\u061F")) doLogout(); return; }
     if (act === "start") { doStart(); return; }
     if (act === "break") { doAction(startBreak, "استراحت آغاز شد"); return; }
     if (act === "end") { doAction(endSession, "جلسه پایان یافت"); return; }
@@ -4418,7 +4461,9 @@
     });
   }
   function doLogout() {
+    window._stExplicitLogout = true;
     if (S.user && S.user.id) { try { _cacheClear(S.user.id); } catch (e) {} }
+    try { localStorage.removeItem(K_LASTUID); } catch (e) {}
     if (_sb) _sb.auth.signOut();
     leavePresence();
     S.user = null; S.profile = null; S.group = null; S.members = []; S.session = null; S.todayTotal = 0;
@@ -4541,14 +4586,51 @@
       return ensureClient().then(function () {
         if (_authUnsub) _authUnsub();
         var sub = _sb.auth.onAuthStateChange(function (event, session) {
-          if (event === "SIGNED_OUT") { S.user = null; S.profile = null; S.phase = "no-auth"; render(); return; }
+          if (event === "SIGNED_OUT") {
+            if (window._stExplicitLogout) {
+              window._stExplicitLogout = false;
+              S.user = null; S.profile = null; S.phase = "no-auth"; render(); return;
+            }
+            try {
+              var _luSO = localStorage.getItem(K_LASTUID);
+              if (_luSO) {
+                var _ccSO = _cacheLoad(_luSO);
+                if (_ccSO) {
+                  if (!S.user) S.user = { id: _luSO, email: (_ccSO.profile && _ccSO.profile.email) || "" };
+                  _cacheApply(_ccSO);
+                  S.offline = true;
+                  render();
+                  return;
+                }
+              }
+            } catch (e) {}
+            S.user = null; S.profile = null; S.phase = "no-auth"; render(); return;
+          }
           if (event === "SIGNED_IN" && session && session.user) { console.log("[st] auth event: SIGNED_IN"); setTimeout(function () { try { refreshAll(); } catch (e) {} }, 50); }
         });
         _authUnsub = function () { try { sub.data.subscription.unsubscribe(); } catch (e) {} };
         return _sb.auth.getSession();
       }).then(function (r) {
-        if (!r || !r.data || !r.data.session) { S.phase = "no-auth"; render(); return; }
-        try { var _cached = _cacheLoad(r.data.session.user.id); if (_cached) { _cacheApply(_cached); render(); } } catch (e) {}
+        if (!r || !r.data || !r.data.session) {
+          if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            try {
+              var _lastuid = localStorage.getItem(K_LASTUID);
+              if (_lastuid) {
+                var _fc = _cacheLoad(_lastuid);
+                if (_fc) {
+                  if (!S.user) S.user = { id: _lastuid, email: (_fc.profile && _fc.profile.email) || "" };
+                  _cacheApply(_fc);
+                  render();
+                  return;
+                }
+              }
+            } catch (e) {}
+          }
+          S.phase = "no-auth"; render(); return;
+        }
+        var _sessUid = r.data.session.user.id;
+        if (!S.user) S.user = { id: _sessUid, email: r.data.session.user.email || "" };
+        try { var _cached = _cacheLoad(_sessUid); if (_cached) { _cacheApply(_cached); render(); } } catch (e) {}
         return refreshAll().then(function () { return recoverPending(); }).then(function () {
           _pomAfterOpen();
           _stSessionBooted = true;
@@ -4557,7 +4639,15 @@
           window._stOnlineHandler = function () {
             if (!S.user || S.refreshInProgress) return;
             S.refreshInProgress = true;
-            refreshAll().then(function () { S.refreshInProgress = false; }).catch(function () { S.refreshInProgress = false; });
+            S.offline = false;
+            if (S.container && S.container.isConnected) render();
+            refreshAll().then(function () { S.refreshInProgress = false; }).catch(function (e) {
+              S.refreshInProgress = false;
+              if (_isNetworkError(e)) {
+                S.offline = true;
+                if (S.container && S.container.isConnected) render();
+              }
+            });
           };
           window.addEventListener("online", window._stOnlineHandler);
           if (window._stOfflineHandler) { try { window.removeEventListener("offline", window._stOfflineHandler); } catch (e) {} }

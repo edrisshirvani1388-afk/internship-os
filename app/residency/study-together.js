@@ -28,7 +28,7 @@
     courses: [], selectedCourseId: null, navTab: "focus", courseEdit: null, courseError: null, courseSaving: false,
     avatarPick: null, avatarBusy: false, avatarError: null, sharePlanPreview: null, sharePlanBusy: false, sharePlanError: null, friendPlanData: null, inviteVisible: false, accountBusy: { identity: false, privacy: false, password: false, email: false }, accountErr: { identity: null, privacy: null, password: null, email: null }, accountOk: { identity: null, privacy: null, password: null, email: null }, friendPlanLoading: false, friendPlanError: null, friendDayDate: null, friendDaySessions: null, friendDayLoading: false, friendDayError: null,
     statsSessions: null, statsPeriod: "week", statsLoading: false, statsError: null,
-    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null, historyRangeMode: "shortcut", historyFromDate: null, historyToDate: null, calYear: null, calMonth: null, histExpanded: null,
+    historyRangeDays: 7, historyCourseFilter: null, historyDayFilter: null, historyRangeMode: "shortcut", historyFromDate: null, historyToDate: null, calYear: null, calMonth: null, histExpanded: null, histSelected: {}, histBulkCourse: null,
     memberProfileView: null, memberProfileData: null, memberProfileLoading: false, memberProfileError: null,
     leaderboardData: null, leaderboardLoading: false, leaderboardError: null, leaderboardPeriod: "today"
   };
@@ -197,7 +197,7 @@
       .eq("id", id).eq("user_id", uid).select();
   }
   function qGetGroupRangeSessions(gid, startIso, endIso) {
-    return _sb.from("study_sessions").select("user_id,client_session_id,started_at,ended_at,end_reason,course_id")
+    return _sb.from("study_sessions").select("user_id,client_session_id,started_at,ended_at,end_reason,course_id,session_type")
       .eq("group_id", gid)
       .gte("started_at", startIso)
       .lt("started_at", endIso)
@@ -265,7 +265,7 @@
     _pomWrite(marker);
     S.pom = marker;
     _pomSetTransitioning(true);
-    startSession(cid, S.selectedCourseId).then(function () {
+    startSession(cid, S.selectedCourseId, "pomodoro").then(function () {
       if (!S.pom || S.pom.clientSessionId !== cid) { _pomSetTransitioning(false); return; }
       S.pom.phase = "focus";
       S.pom.phaseStartedAt = new Date().toISOString();
@@ -995,7 +995,8 @@
         client_session_id: "manual-" + _uuid(),
         started_at: sIso,
         ended_at: eIso,
-        end_reason: rVal
+        end_reason: rVal,
+        session_type: "manual"
       };
       op = qInsertSession(payload).then(function (r) {
         if (r && r.error) throw r.error;
@@ -1028,18 +1029,27 @@
       durSec = Math.max(0, Math.floor((new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000));
     }
     var dur = _fmtTimer(durSec);
-    var badge, badgeCls;
-    if (s.end_reason === "crash") { badge = "\u0642\u0637\u0639\u200C\u0634\u062F\u0647"; badgeCls = "st-hist-badge-crash"; }
-    else if (s.end_reason === "break") { badge = "\u0627\u0633\u062A\u0631\u0627\u062D\u062A"; badgeCls = "st-hist-badge-break"; }
-    else if (s.end_reason === "ended") { badge = "\u067E\u0627\u06CC\u0627\u0646"; badgeCls = "st-hist-badge-ended"; }
-    else { badge = "\u0628\u0627\u0632"; badgeCls = "st-hist-badge-open"; }
-    var isManual = (s.client_session_id || "").indexOf("manual-") === 0;
+
+    var statusBadge, statusCls;
+    if (s.end_reason === "crash") { statusBadge = "\u0642\u0637\u0639\u200C\u0634\u062F\u0647"; statusCls = "st-hist-badge-crash"; }
+    else if (s.end_reason === "break") { statusBadge = "\u0627\u0633\u062A\u0631\u0627\u062D\u062A"; statusCls = "st-hist-badge-break"; }
+    else if (s.end_reason === "ended") { statusBadge = "\u067E\u0627\u06CC\u0627\u0646"; statusCls = "st-hist-badge-ended"; }
+    else { statusBadge = "\u0628\u0627\u0632"; statusCls = "st-hist-badge-open"; }
+
+    var isManualCid = (s.client_session_id || "").indexOf("manual-") === 0;
+    var typeLabel, typeCls;
+    if (s.session_type === "pomodoro") { typeLabel = "\uD83C\uDF45 \u067E\u0648\u0645\u0648\u062F\u0648\u0631\u0648"; typeCls = "st-hist-badge-pom"; }
+    else if (s.session_type === "manual" || isManualCid) { typeLabel = "\u270D\uFE0F \u062F\u0633\u062A\u06CC"; typeCls = "st-hist-badge-manual"; }
+    else if (s.session_type === "normal") { typeLabel = "\u25B6\uFE0F \u0639\u0627\u062F\u06CC"; typeCls = "st-hist-badge-normal"; }
+    else { typeLabel = "\u2753 \u0646\u0627\u0645\u0634\u062E\u0635"; typeCls = "st-hist-badge-unknown"; }
+
     var c = _courseById(s.course_id || null);
     var courseName = c ? c.name : "\u0628\u062F\u0648\u0646 \u062F\u0631\u0633";
     var courseIcon = c && c.icon ? _courseIconGlyph(c.icon) : "\uD83D\uDCDA";
     var colorCls = c ? _courseColorClass(c) : "st-course-none";
     var iconBg = c ? "" : "background:rgba(148,163,184,0.18);";
     var expanded = S.histExpanded === s.id;
+    var selected = !!(S.histSelected && S.histSelected[s.id]);
 
     var actions = "";
     var editable = s.ended_at && s.end_reason !== "crash";
@@ -1055,18 +1065,21 @@
         '<dl><dt>\u067E\u0627\u06CC\u0627\u0646:</dt><dd>' + esc(end) + '</dd></dl>' +
         '<dl><dt>\u0645\u062F\u062A:</dt><dd>' + dur + '</dd></dl>' +
         '<dl><dt>\u062F\u0631\u0633:</dt><dd>' + esc(courseName) + '</dd></dl>' +
-        '<dl><dt>\u0648\u0636\u0639\u06CC\u062A:</dt><dd>' + esc(badge) + '</dd></dl>' +
-        (isManual ? '<dl><dt>\u0646\u0648\u0639:</dt><dd>\u062B\u0628\u062A \u062F\u0633\u062A\u06CC</dd></dl>' : '') +
+        '<dl><dt>\u0648\u0636\u0639\u06CC\u062A:</dt><dd>' + esc(statusBadge) + '</dd></dl>' +
+        '<dl><dt>\u0646\u0648\u0639:</dt><dd>' + esc(typeLabel) + '</dd></dl>' +
       '</div>';
     }
 
     return '<div class="st-hist-row-v2" data-st-act="hist-expand" data-hist-id="' + esc(s.id) + '">' +
+      '<div class="st-hist-select-col">' +
+        '<input type="checkbox" class="st-hist-cb" data-st-act="hist-select" data-hist-id="' + esc(s.id) + '"' + (selected ? ' checked' : '') + '>' +
+      '</div>' +
       '<div class="st-hist-course-icon ' + colorCls + '" style="' + iconBg + '">' + esc(courseIcon) + '</div>' +
       '<div class="st-hist-row-body">' +
         '<div class="st-hist-row-title">' +
           '<span class="st-hist-row-course' + (c ? "" : " is-none") + '">' + esc(courseName) + '</span>' +
-          '<span class="st-hist-badge-v2 ' + badgeCls + '">' + esc(badge) + '</span>' +
-          (isManual ? '<span class="st-hist-badge-v2 st-hist-badge-manual">\u062F\u0633\u062A\u06CC</span>' : '') +
+          '<span class="st-hist-badge-v2 ' + statusCls + '">' + esc(statusBadge) + '</span>' +
+          '<span class="st-hist-badge-v2 ' + typeCls + '">' + esc(typeLabel) + '</span>' +
         '</div>' +
         '<div class="st-hist-row-meta">' +
           '<span>\u23F1 ' + esc(start) + ' \u2192 ' + esc(end) + '</span>' +
@@ -1307,6 +1320,53 @@
       '<div class="st-hm-grid">' + emptyCells + dayCells + '</div>' +
     '</div>';
   }
+  function _clearBulkSelection() {
+    S.histSelected = {};
+    S.histBulkCourse = null;
+    render();
+  }
+  function _applyBulkCourse() {
+    var ids = Object.keys(S.histSelected || {}).filter(function (k) { return S.histSelected[k]; });
+    if (ids.length === 0) { S.historyError = "\u0647\u06CC\u0686 \u062C\u0644\u0633\u0647\u200C\u0627\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u0646\u0634\u062F\u0647"; render(); return; }
+    var cid = S.histBulkCourse;
+    if (!cid) { S.historyError = "\u06CC\u06A9 \u062F\u0631\u0633 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F"; render(); return; }
+    S.historySaving = true;
+    S.historyError = null;
+    render();
+    _sb.from("study_sessions")
+      .update({ course_id: cid })
+      .in("id", ids)
+      .eq("user_id", S.user.id)
+      .select("id,course_id")
+      .then(function (r) {
+        if (r && r.error) throw r.error;
+        var updated = r.data ? r.data.length : 0;
+        S.historySaving = false;
+        S.histSelected = {};
+        S.histBulkCourse = null;
+        try { notify("success", updated + " \u062C\u0644\u0633\u0647 \u062F\u0633\u062A\u0647\u200C\u0628\u0646\u062F\u06CC \u0634\u062F"); } catch (e) {}
+        return _loadHistory().then(function () { if (S.readyView === "history") render(); });
+      })
+      .catch(function (err) {
+        S.historySaving = false;
+        S.historyError = String(err && err.message || err);
+        render();
+      });
+  }
+  function _renderHistBulkBar() {
+    var keys = Object.keys(S.histSelected || {}).filter(function (k) { return S.histSelected[k]; });
+    if (keys.length === 0) return "";
+    var opts = '<option value=""' + (S.histBulkCourse ? "" : " selected") + '>\u062F\u0631\u0633 \u0631\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F</option>';
+    (S.courses || []).forEach(function (c) {
+      opts += '<option value="' + esc(c.id) + '"' + (S.histBulkCourse === c.id ? " selected" : "") + '>' + esc(c.name) + '</option>';
+    });
+    return '<div class="st-hist-bulk-bar">' +
+      '<span class="st-hist-bulk-count">' + fa0(keys.length) + ' \u062C\u0644\u0633\u0647 \u0627\u0646\u062A\u062E\u0627\u0628 \u0634\u062F\u0647</span>' +
+      '<select class="st-hist-bulk-course" data-st-act="hist-bulk-course">' + opts + '</select>' +
+      '<button class="st-btn-primary st-btn-small" data-st-act="hist-bulk-apply"' + (S.historySaving ? ' disabled' : '') + '>' + (S.historySaving ? '\u062F\u0631 \u062D\u0627\u0644 \u0627\u0639\u0645\u0627\u0644...' : '\u2705 \u0627\u0639\u0645\u0627\u0644') + '</button>' +
+      '<button class="st-btn-ghost st-btn-small" data-st-act="hist-bulk-clear">\u274C \u0644\u063A\u0648</button>' +
+    '</div>';
+  }
   function renderHistory() {
     var headerCommon =
       _navTabsHTML("history") +
@@ -1316,6 +1376,7 @@
       '<div class="st-hero st-hero-small"><h1>📜 تاریخچهٔ مطالعه</h1></div>' +
       _renderHistCalendar() +
       _renderHistRangePills() +
+      _renderHistBulkBar() +
       '<div class="st-hist-filters">' +
         _renderHistCourseFilter() +
         (S.historyDayFilter ? '<button class="st-btn-ghost st-btn-small" data-st-act="hist-day-clear" title="حذف فیلتر روز">✖ ' + esc(S.historyDayFilter) + '</button>' : '') +
@@ -1331,6 +1392,11 @@
       return;
     }
     var filtered = _filteredHistorySessions();
+    var unclassifiedCount = 0;
+    (S.historySessions || []).forEach(function (s) { if (!s.course_id) unclassifiedCount++; });
+    var unclassifiedHTML = unclassifiedCount > 0
+      ? '<div class="st-hist-unclassified">\u26A0\uFE0F ' + fa0(unclassifiedCount) + ' \u062C\u0644\u0633\u0647 \u0628\u062F\u0648\u0646 \u062F\u0631\u0633 \u2014 \u0628\u0627 \u0627\u0646\u062A\u062E\u0627\u0628 \u06AF\u0631\u0648\u0647\u06CC \u062F\u0633\u062A\u0647\u200C\u0628\u0646\u062F\u06CC \u06A9\u0646\u06CC\u062F</div>'
+      : "";
     var heatmap = _renderHistHeatmap();
     var groups = {};
     var order = [];
@@ -1356,6 +1422,7 @@
       : "";
     S.container.innerHTML = pageWrap(
       headerCommon +
+      unclassifiedHTML +
       '<div class="st-hist-actions">' +
         '<button class="st-btn-primary" data-st-act="hist-add" title="افزودن جلسهٔ دستی">➕ افزودن دستی</button>' +
         '<button class="st-btn-ghost" data-st-act="hist-reload" title="تازه‌سازی">🔄 تازه‌سازی</button>' +
@@ -2601,7 +2668,7 @@
     );
     wire();
   }
-  function startSession(explicitCid, courseId) {
+  function startSession(explicitCid, courseId, sessionType) {
     S.onBreak = false;
     if (!S.user || !S.group) return Promise.reject(new Error("no user/group"));
     var cid = explicitCid || _uuid();
@@ -2610,7 +2677,7 @@
     S.pendingClientId = cid;
     var _cid = courseId !== undefined ? courseId : null;
     if (_cid && !_courseById(_cid)) _cid = null;
-    return qInsertSession({ user_id: S.user.id, group_id: S.group.id, client_session_id: cid, started_at: startedAt, course_id: _cid }).then(function (r) {
+    return qInsertSession({ user_id: S.user.id, group_id: S.group.id, client_session_id: cid, started_at: startedAt, course_id: _cid, session_type: (sessionType || "normal") }).then(function (r) {
       if (r.error) {
         return qFindByClientId(S.user.id, cid).then(function (ex) {
           if (!ex) throw r.error;
@@ -3188,6 +3255,7 @@
       if (S.memberProfileView) _friendDaySetDate(S.memberProfileView.user_id, t.value);
       return;
     }
+    if (act === "hist-bulk-course") { S.histBulkCourse = t.value || null; render(); return; }
     if (act === "hist-course-filter") {
       var v = t.value;
       S.historyCourseFilter = (v === "") ? null : v;
@@ -3253,6 +3321,9 @@
       _loadHistory().then(function () { render(); });
       return;
     }
+    if (act === "hist-select") { e.stopPropagation(); var sid = t.getAttribute("data-hist-id"); if (sid) { S.histSelected[sid] = !!t.checked; render(); } return; }
+    if (act === "hist-bulk-apply") { _applyBulkCourse(); return; }
+    if (act === "hist-bulk-clear") { _clearBulkSelection(); return; }
     if (act === "hist-expand") {
       var hid = t.getAttribute("data-hist-id");
       S.histExpanded = (S.histExpanded === hid) ? null : hid;
@@ -3552,7 +3623,7 @@
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
     S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null; S.inviteVisible = false; S.accountBusy = { identity: false, privacy: false, password: false, email: false }; S.accountErr = { identity: null, privacy: null, password: null, email: null }; S.accountOk = { identity: null, privacy: null, password: null, email: null };
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
-    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
     S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
     render();
@@ -3603,7 +3674,7 @@
     S.courses = []; S.selectedCourseId = null; S.navTab = "focus"; S.courseEdit = null; S.courseError = null; S.courseSaving = false;
     S.avatarPick = null; S.avatarBusy = false; S.avatarError = null; S.friendDayDate = null; S.friendDaySessions = null; S.friendDayLoading = false; S.friendDayError = null; S.sharePlanPreview = null; S.sharePlanBusy = false; S.sharePlanError = null; S.friendPlanData = null; S.friendPlanLoading = false; S.friendPlanError = null; S.inviteVisible = false; S.accountBusy = { identity: false, privacy: false, password: false, email: false }; S.accountErr = { identity: null, privacy: null, password: null, email: null }; S.accountOk = { identity: null, privacy: null, password: null, email: null };
     S.statsSessions = null; S.statsPeriod = "week"; S.statsLoading = false; S.statsError = null;
-    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null;
+    S.historyRangeDays = 7; S.historyCourseFilter = null; S.historyDayFilter = null; S.historyRangeMode = "shortcut"; S.historyFromDate = null; S.historyToDate = null; S.calYear = null; S.calMonth = null; S.histExpanded = null; S.histSelected = {}; S.histBulkCourse = null;
     S.memberProfileView = null; S.memberProfileData = null; S.memberProfileLoading = false; S.memberProfileError = null;
     S.leaderboardData = null; S.leaderboardLoading = false; S.leaderboardError = null; S.leaderboardPeriod = "today";
   };

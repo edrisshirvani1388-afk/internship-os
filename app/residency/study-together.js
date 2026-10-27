@@ -111,6 +111,53 @@
     function pad2(n) { return _toPersianDigits(n < 10 ? "0" + n : "" + n); }
     return pad2(h) + ":" + pad2(m) + ":" + pad2(s);
   }
+
+  function _fmtLastSeen(isoStr) {
+    if (!isoStr) return "\u0646\u0627\u0645\u0634\u062E\u0635";
+    try {
+      var d = new Date(isoStr);
+      if (isNaN(d.getTime())) return "\u0646\u0627\u0645\u0634\u062E\u0635";
+      var now = Date.now();
+      var diffSec = Math.floor((now - d.getTime()) / 1000);
+      var HHMM = _toPersianDigits(("0" + d.getHours()).slice(-2)) + ":" + _toPersianDigits(("0" + d.getMinutes()).slice(-2));
+      if (diffSec < 0) return "\u0647\u0645\u06CC\u0646 \u062D\u0627\u0644\u0627";
+      if (diffSec < 60) return "\u0647\u0645\u06CC\u0646 \u062D\u0627\u0644\u0627 (" + HHMM + ")";
+      if (diffSec < 3600) return _toPersianDigits(Math.floor(diffSec / 60)) + " \u062F\u0642\u06CC\u0642\u0647 \u067E\u06CC\u0634 (" + HHMM + ")";
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      var thatDay = new Date(d.getTime()); thatDay.setHours(0, 0, 0, 0);
+      var dayDiff = Math.round((today.getTime() - thatDay.getTime()) / 86400000);
+      if (dayDiff === 0) return _toPersianDigits(Math.floor(diffSec / 3600)) + " \u0633\u0627\u0639\u062A \u067E\u06CC\u0634 (" + HHMM + ")";
+      if (dayDiff === 1) return "\u062F\u06CC\u0631\u0648\u0632 " + HHMM;
+      if (dayDiff < 7) return _toPersianDigits(dayDiff) + " \u0631\u0648\u0632 \u067E\u06CC\u0634 (" + HHMM + ")";
+      var jp = _isoToJalaliParts(isoStr);
+      if (jp) {
+        var months = ["\u0641\u0631\u0648\u0631\u062F\u06CC\u0646","\u0627\u0631\u062F\u06CC\u0628\u0647\u0634\u062A","\u062E\u0631\u062F\u0627\u062F","\u062A\u06CC\u0631","\u0645\u0631\u062F\u0627\u062F","\u0634\u0647\u0631\u06CC\u0648\u0631","\u0645\u0647\u0631","\u0622\u0628\u0627\u0646","\u0622\u0630\u0631","\u062F\u06CC","\u0628\u0647\u0645\u0646","\u0627\u0633\u0641\u0646\u062F"];
+        return _toPersianDigits(jp.jd) + " " + months[jp.jm - 1] + " " + _toPersianDigits(jp.jy) + " (" + HHMM + ")";
+      }
+      return _fmtDateJalali(isoStr) + " (" + HHMM + ")";
+    } catch (e) { return "\u0646\u0627\u0645\u0634\u062E\u0635"; }
+  }
+  function _lastSeenSuffix(m, status) {
+    if (!m || status !== "disconnected" || !m.last_seen_at) return "";
+    return ' <span class="st-m-last-seen">\u00B7 ' + esc(_fmtLastSeen(m.last_seen_at)) + '</span>';
+  }
+  var _lastSeenWriteAt = 0;
+  function _touchLastSeen(force) {
+    if (!S.user || !S.user.id || !_sb) return;
+    if (!force) {
+      if (S.offline) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      var now = Date.now();
+      if (now - _lastSeenWriteAt < 60000) return;
+      _lastSeenWriteAt = now;
+    }
+    try {
+      var _isoNow = new Date().toISOString();
+      _sb.from("profiles").update({ last_seen_at: _isoNow }).eq("id", S.user.id)
+        .then(function (r) { if (r && !r.error && S.profile) S.profile.last_seen_at = _isoNow; })
+        .catch(function () {});
+    } catch (e) {}
+  }
   function _withTimeout(promise, ms, label) {
     return new Promise(function (resolve, reject) {
       var done = false;
@@ -191,7 +238,7 @@
   }
   function qGetProfiles(uids) {
     if (!uids.length) return Promise.resolve([]);
-    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio,avatar_url,share_daily_plan").in("id", uids).then(function (r) { return r.data || []; });
+    return _sb.from("profiles").select("id,username,display_name,share_timeline,share_daily_total,share_course_breakdown,share_history_with_group,avatar_key,bio,avatar_url,share_daily_plan,last_seen_at").in("id", uids).then(function (r) { return r.data || []; });
   }
   function qGetTodaySessions(gid) {
     var startIso = new Date(_startOfTodayLocalMs()).toISOString();
@@ -3085,7 +3132,7 @@
         '<div class="st-m-avatar st-m-avatar-' + cls + ' st-avatar-' + esc(avKey) + '">' + _avatarInnerHTML(m) + '</div>' +
         '<div class="st-m-body">' +
           '<div class="st-m-name">' + esc(m.display_name) + (m.role === "owner" ? ' <span class="st-m-owner">مالک</span>' : "") + (isSelf ? ' <span class="st-m-self">شما</span>' : "") + '</div>' +
-          '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + '</div>' +
+          '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + _lastSeenSuffix(m, status) + '</div>' +
         '</div>' +
       '</div>';
     }).join("");
@@ -3433,7 +3480,7 @@
                     display_name: pr.display_name || "?", username: pr.username || "?",
                     share_timeline: !!pr.share_timeline, share_daily_total: !!pr.share_daily_total,
                     share_course_breakdown: !!pr.share_course_breakdown, share_history_with_group: !!pr.share_history_with_group,
-                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null, avatar_url: pr.avatar_url || null, share_daily_plan: !!pr.share_daily_plan };
+                    avatar_key: pr.avatar_key || "av-1", bio: pr.bio || null, avatar_url: pr.avatar_url || null, share_daily_plan: !!pr.share_daily_plan, last_seen_at: pr.last_seen_at || null };
                 });
                 recomputeTodayTotal(todaySessions);
                 try { S.goals = _groupGoals(res[2] || []); } catch (e) { S.goals = { global: null, courses: {} }; }
@@ -3459,6 +3506,7 @@
                     if (_channel) { broadcastPresence(); } else { joinPresence(); }
                     render();
                     _cacheSave();
+                    _touchLastSeen(false);
                     // W1-v2 immediate render
                     _loadCourses().then(function () { if (S.phase === "ready" && S.container && S.container.isConnected) render(); });
                     return;
@@ -3469,6 +3517,7 @@
                   if (_channel) { broadcastPresence(); } else { joinPresence(); }
                   render();
                   _cacheSave();
+                  _touchLastSeen(false);
                   // W1-v2 immediate render
                   _loadCourses().then(function () { if (S.phase === "ready" && S.container && S.container.isConnected) render(); });
                 });
@@ -3823,7 +3872,7 @@
           '<div class="st-m-avatar st-m-avatar-' + status + ' st-avatar-' + esc(avKey) + '">' + _avatarInnerHTML(m) + '</div>' +
           '<div class="st-room-card-name">' + esc(m.display_name) + ownerBadge + selfMark + '</div>' +
         '</div>' +
-        '<div class="st-room-card-status">' + icon + ' ' + label + '</div>' +
+        '<div class="st-room-card-status">' + icon + ' ' + label + _lastSeenSuffix(m, status) + '</div>' +
         timer + total + activity +
       '</div>';
     }).join("");
@@ -4041,7 +4090,7 @@
         '<div class="st-m-avatar st-m-avatar-' + cls + ' st-avatar-' + esc(m.avatar_key || "av-1") + '" aria-hidden="true">' + _avatarInnerHTML(m) + '</div>' +
         '<div class="st-m-body">' +
           '<div class="st-m-name">' + esc(m.display_name) + ownerBadge + selfMark + '</div>' +
-          '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + '</div>' +
+          '<div class="st-m-status"><span class="st-m-status-dot"></span>' + label + _lastSeenSuffix(m, status) + '</div>' +
           timer + total + activity +
         '</div>' +
       '</div>';
@@ -4468,7 +4517,10 @@
   }
   function doLogout() {
     window._stExplicitLogout = true;
-    if (S.user && S.user.id) { try { _cacheClear(S.user.id); } catch (e) {} }
+    if (S.user && S.user.id) {
+      try { _touchLastSeen(true); } catch (e) {}
+      try { _cacheClear(S.user.id); } catch (e) {}
+    }
     try { localStorage.removeItem(K_LASTUID); } catch (e) {}
     if (_sb) _sb.auth.signOut();
     leavePresence();
@@ -4641,6 +4693,16 @@
           _pomAfterOpen();
           _stSessionBooted = true;
           setTimeout(_sharePlanAutoPublish, 500);
+          _touchLastSeen(false);
+          if (window._stVisHandler) { try { document.removeEventListener('visibilitychange', window._stVisHandler); } catch (e) {} }
+          window._stVisHandler = function () { if (document.visibilityState === 'hidden') { try { _touchLastSeen(true); } catch (e) {} } };
+          document.addEventListener('visibilitychange', window._stVisHandler);
+          if (window._stPageHideHandler) { try { window.removeEventListener('pagehide', window._stPageHideHandler); } catch (e) {} }
+          window._stPageHideHandler = function () { try { _touchLastSeen(true); } catch (e) {} };
+          window.addEventListener('pagehide', window._stPageHideHandler);
+          if (window._stBeforeUnloadHandler) { try { window.removeEventListener('beforeunload', window._stBeforeUnloadHandler); } catch (e) {} }
+          window._stBeforeUnloadHandler = function () { try { _touchLastSeen(true); } catch (e) {} };
+          window.addEventListener('beforeunload', window._stBeforeUnloadHandler);
           if (window._stOnlineHandler) { try { window.removeEventListener("online", window._stOnlineHandler); } catch (e) {} }
           window._stOnlineHandler = function () {
             if (!S.user || S.refreshInProgress) return;
@@ -4658,6 +4720,7 @@
           window.addEventListener("online", window._stOnlineHandler);
           if (window._stOfflineHandler) { try { window.removeEventListener("offline", window._stOfflineHandler); } catch (e) {} }
           window._stOfflineHandler = function () {
+            try { _touchLastSeen(true); } catch (e) {}
             S.offline = true;
             if (S.container && S.container.isConnected) render();
           };
@@ -4671,6 +4734,10 @@
     });
   };
   ST.close = function () {
+    if (S.user && S.user.id) { try { _touchLastSeen(true); } catch (e) {} }
+    if (window._stVisHandler) { try { document.removeEventListener('visibilitychange', window._stVisHandler); } catch (e) {} window._stVisHandler = null; }
+    if (window._stPageHideHandler) { try { window.removeEventListener('pagehide', window._stPageHideHandler); } catch (e) {} window._stPageHideHandler = null; }
+    if (window._stBeforeUnloadHandler) { try { window.removeEventListener('beforeunload', window._stBeforeUnloadHandler); } catch (e) {} window._stBeforeUnloadHandler = null; }
     if (_tickInterval) { clearInterval(_tickInterval); _tickInterval = null; }
     if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
     leavePresence();

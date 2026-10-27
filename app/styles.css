@@ -32147,3 +32147,11 @@ html body input.r21-manage-settings-input:focus-visible {
 }
 
 /* [END PATCH:study-together-w13] */
+/* [PATCH:study-together-w17] - last seen label */
+.st-page .st-m-last-seen {
+  font-size: 10px;
+  opacity: 0.65;
+  margin-inline-start: 2px;
+  color: rgba(255,255,255,0.75);
+}
+/* [END PATCH:study-together-w17] */

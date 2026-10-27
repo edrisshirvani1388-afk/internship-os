@@ -1976,3 +1976,196 @@ Status: Accepted
 
 - Cross-user course analytics with `share_course_breakdown=false` — UI blocks، server allows
 - Time-based share (share only last 7 days) — Wave 4+
+
+
+---
+
+## ADR-104 — Study Together 2.0 Wave 4-8: Product Completion
+
+Date: 2026-10-23 (Agent #29)
+Status: Accepted
+
+### Decision
+
+Complete product surface for Study Together 2.0 across five waves:
+
+- Wave 4 — Bio field + course edit/archive + visual overhaul (design tokens)
+- Wave 5 — Avatar upload (Supabase Storage) + friend day view
+- Wave 6 — Shared daily plan (opt-in snapshot) + friend schedule
+- Wave 7 — Account center (identity, email, password, privacy, group) + Persian calendar + rich history rows
+- Wave 8 — Session type (`normal` / `pomodoro` / `manual`) + bulk categorize
+
+### Rationale
+
+Pilot needs full product surface, not just presence. Users need to manage courses, view history with proper dates, see friend activity, and categorize legacy sessions.
+
+### Contract
+
+- Bio: `profiles.bio` text, ≤200 chars
+- Avatar: `profiles.avatar_url` text; Storage bucket `avatars` (2MB limit, jpg/png/webp); 4 RLS policies (self insert/update/delete, auth read)
+- Shared plan: `profiles.share_daily_plan` boolean; `study_shared_day_plans` table (user_id, group_id, plan_date, items JSONB, published_at); 2 RLS policies
+- Session type: `study_sessions.session_type` text nullable, check `in ('normal','pomodoro','manual')`; NULL = unknown (legacy)
+- Calendar: Jalali display via `InternshipLib.date`; day/week/month navigation
+- History: type badge (normal/pomodoro/manual/unknown) + status badge (ended/break/crash/open) + course icon/color
+- Bulk categorize: multi-select sessions + assign course_id (owner-scoped via existing trigger)
+
+### Migrations applied
+
+- `study-together-5.0-migrations.sql` — avatar_url + bucket + 4 policies
+- `study-together-6.0-migrations.sql` — share_daily_plan + shared_day_plans table + 2 policies
+- `study-together-8.0-migrations.sql` — session_type column
+
+### Non-goals
+
+- Multi-course sessions (each session = one course or null)
+- Session re-attribution after end
+- Storage avatar upload > 2MB (uses gradients otherwise)
+- SMTP email verification (pilot scope)
+
+---
+
+## ADR-105 — Study Together Wave 9: Live Room + ISSUE-ST-04 Fix
+
+Date: 2026-10-23 (Agent #29)
+Status: Accepted
+
+### Decision
+
+Live co-study room (additive view) + fix pre-existing `schedulePresenceReconnect` duplication bug.
+
+### Rationale
+
+Users need to see each other simultaneously — a room view with self timer + member cards is more engaging than a mere list.
+
+ST-04 pre-existing bug: two `schedulePresenceReconnect` definitions; the second (3s hardcoded, no backoff) overwrote the first. Result: presence reconnects at 3s intervals without exponential backoff, causing server load and potential reconnect loops.
+
+### Contract
+
+- Room state: `S.roomOpen` boolean; `renderRoom()` dispatch via `renderReady()`
+- Self timer: large, driven by `S.session.started_at`
+- Member cards: presence + todayTotal + activity (privacy-gated)
+- Group summary: active count + group todayTotal
+- ST-04 fix: single `schedulePresenceReconnect` (backoff 3→6→12→24→30s preserved)
+- Heartbeat: 30s interval only while room open (per ADR-094)
+- Exit room: `S.roomOpen = false`; session untouched
+
+### Non-goals
+
+- Room chat / feed
+- Multi-room / concurrent rooms
+- Notification when someone joins
+
+---
+
+## ADR-106 — Study Together Wave 10-12: Goals, Streaks, Leaderboard
+
+Date: 2026-10-27 (Agent #29)
+Status: Accepted
+
+### Decision
+
+Three related features:
+
+- Wave 10 — Daily/weekly goals (global + per-course) + streak tracking + Persian date display
+- Wave 11 — Group weekly goal
+- Wave 12 — Weekly leaderboard + weekly recap
+
+### Rationale
+
+Individual goals + group goals + leaderboard creates a social loop: users see their progress vs friends, and group goal gives common target.
+
+### Contract
+
+- `study_goals` table: id, user_id, scope (`global`|`course`), course_id nullable, daily_minutes, weekly_minutes, enabled, updated_at
+- Unique indexes: `(user_id) where scope='global'`, `(user_id, course_id) where scope='course'`
+- `profiles.best_streak_days` — denormalized max (updated when streak.best > current)
+- `study_groups.weekly_goal_minutes` — nullable int
+- Streak computation: local-day boundary; `crash` excluded; `ended`/`break` counted
+- Week boundary: Saturday-start, Asia/Tehran
+- Leaderboard: visible members only (share_daily_total=true); hidden members shown with 🔒
+- Tie handling: same seconds = same rank; stable order by display_name
+
+### Migrations applied
+
+- `study-together-10.0-migrations.sql` — study_goals + best_streak_days
+- `study-together-11.0-migrations.sql` — weekly_goal_minutes
+
+### Non-goals
+
+- Goal notifications
+- Cross-group leaderboard
+- Goal suggestions
+
+---
+
+## ADR-107 — Study Together Wave 13-17: Resilience & Polish
+
+Date: 2026-10-27 (Agent #29)
+Status: Accepted
+
+### Decision
+
+Five wave improvements that complete pilot readiness:
+
+- Wave 13 — Per-page help + loading states + offline cache (localStorage per user)
+- Wave 14 — Offline boot fix + logout relocation + chip offline override
+- Wave 15 — Server reset (data-only, no DDL) + debug gating + save bug fix
+- Wave 16 — Full installer v1.0.0
+- Wave 17 — Last seen label (v1.0.1)
+
+### Rationale
+
+Pilot needs:
+- Help without training new users
+- Offline resilience (users have unstable internet)
+- Reliable save (before: silent 0-row update showed "success")
+- Version tracking in footer
+- Social presence ("last seen 2 hours ago")
+
+### Contract
+
+**Offline cache:**
+- Key: `internship-os.study-together.cache.<uid>.v1`
+- Payload: profile, group, members (compact), courses, goals, streak, weeklyTotal, weeklyBestDay, groupGoalProgress, historySessions (max 50), todayTotal, todaySessionCount
+- Fallback key: `internship-os.study-together.lastuid` for offline boot when `getSession()` returns null
+- Save on every successful `refreshAll`; apply at `ST.open` before network
+- Write-blocked when offline (`_requireOnline()` guard)
+
+**Save bug fix (critical):**
+- All save functions: read inputs → build patch → `S.busy = true; render()` → update with `.select().single()` → `if (!r || !r.data) throw`
+- **Never `render()` before reading inputs** — DOM resets to old state
+- Detects silent 0-row RLS failures that previously appeared as success
+
+**Debug gating:**
+- All `[st]` console.log behind `window.__ST_DEBUG__` (default off)
+- `[st-bridge]` warn preserved (real errors)
+- `window._stOnlineHandler`, `_stOfflineHandler`, `_stExplicitLogout` preserved (lifecycle)
+
+**Last seen:**
+- `profiles.last_seen_at` timestamptz nullable
+- Tracked on: visibilitychange=hidden, pagehide, beforeunload, offline, logout, ST.close
+- 60s throttle on auto (`_touchLastSeen(false)`); force on explicit (`_touchLastSeen(true)`)
+- Display: relative Persian ("۲ ساعت پیش (۱۴:۳۰)", "دیروز ۱۴:۳۰", "۵ آبان ۱۴۰۵ (۱۴:۳۰)")
+- No periodic heartbeat — Supabase Presence handles "currently online"
+
+**Installer:**
+- `release.ps1` produces `InternshipOS-Setup-vX.Y.Z.exe`
+- Fresh installs: `data/study-together.js` missing → `loadConfig()` falls back to `app/study-together-defaults.js` (in git, publishable key only)
+- Owner-supplied `data/study-together.js` overrides defaults when present
+
+### Migrations applied
+
+None new in Wave 15-16 (data reset only). Wave 17 adds `profiles.last_seen_at`.
+
+### Non-goals
+
+- Offline write queue (blocked by design)
+- Cross-account cache sharing
+- Live multi-device sync test
+
+### Consequences
+
+- WebView2 cache stale after release requires `%LOCALAPPDATA%\InternshipOS\WebView2` deletion
+- Fresh installs work without manual config (defaults in git)
+- Silent 0-row DB failures now surface as explicit errors
+- Save operations observable in DB after each action

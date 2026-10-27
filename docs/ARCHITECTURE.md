@@ -1644,3 +1644,175 @@ Schema v22، `window.INTERNSHIP_STATE`، `state.tasks`، `state.residency.activi
 - `_toPersianDigits` + `_fmtTimer` — zero-padding bug fix
 - `renderX(); wire(); return;` dispatch pattern (not `return renderX()`)
 - `_agent*-audit/` gitignore
+
+
+---
+
+## Study Together 1.0.1 — Complete Architecture (Waves 4-17, Agent #29)
+
+### Purpose
+
+Live co-study experience for a private group of friends, built on Supabase Free (Auth + Postgres + Realtime Presence + Storage). Zero state mutation on Internship OS core.
+
+### File map
+
+    app/
+      residency/
+        study-together.js         (about 7200 lines — module)
+        study-together-tests.js   (bridge, poll-until-ready)
+      study-together-defaults.js  (config fallback for fresh installs, in git)
+      app.js                      (bridge: window.__ioStudyTogetherBridge)
+      index.html                  (script order: defaults -> module -> tests)
+      styles.css                  ([PATCH:study-together-w1..w17])
+
+    data/
+      study-together.js           (owner-supplied config, gitignored)
+
+### Public API
+
+    R.studyTogether.open(container)     — render
+    R.studyTogether.close()             — teardown
+    R.studyTogether.status()            — { phase, connection, userId, groupId, hasSession }
+    R.studyTogether.__tests()           — 41 unit tests
+
+### Bridge (from app.js)
+
+    window.__ioStudyTogetherBridge = {
+      state(), notify(level, msg), escapeHtml(s),
+      fa0(n), fa1(n), faNum(n), todayJalali(),
+      setRoute(route), getCurrentActivity(), getDailyPlan(dateJalali)
+    }
+
+### Internal state S
+
+    S = {
+      phase, user, profile, group, members, connection, lastError, container,
+      session, todayTotal, pendingClientId, onBreak, readyView,
+      todaySessionCount, lastSessionEndedAt, pom,
+      courses, selectedCourseId, courseEdit, courseError, courseSaving,
+      historySessions, historyView, historyEdit, historyError,
+      historySaving, historyPendingDelete, historyRangeDays,
+      historyCourseFilter, historyDayFilter, historyRangeMode,
+      historyFromDate, historyToDate, calYear, calMonth,
+      histExpanded, histSelected, histBulkCourse,
+      statsSessions, statsPeriod, statsLoading, statsError,
+      memberProfileView, memberProfileData, memberProfileLoading, memberProfileError,
+      leaderboardData, leaderboardLoading, leaderboardError, leaderboardPeriod,
+      roomOpen,
+      goals, streak, weeklyTotalSec, weeklyBestDay,
+      goalsBusy, goalsError, groupGoalProgress, groupGoalBusy, groupGoalError,
+      avatarPick, avatarBusy, avatarError, inviteVisible,
+      accountBusy: {identity, privacy, password, email},
+      accountErr: {identity, privacy, password, email},
+      accountOk: {identity, privacy, password, email},
+      sharePlanPreview, sharePlanBusy, sharePlanError,
+      friendPlanData, friendPlanLoading, friendPlanError,
+      friendDayDate, friendDaySessions, friendDayLoading, friendDayError,
+      helpOpen, helpPage, offline, cacheAt, refreshInProgress
+    }
+
+### DB schema (Supabase)
+
+| Table | Purpose | RLS |
+|---|---|---|
+| profiles | User profile + share flags + avatar + last_seen_at | self read/insert/update + same-group read |
+| study_groups | Group metadata + invite code + weekly goal | member read + owner update/delete |
+| study_group_members | Membership (RPC-only insert) | self/group read + self/owner delete |
+| study_sessions | Sessions with client_session_id + course_id + session_type | self + group-read if share_daily_total |
+| study_courses | Per-user courses | self all |
+| study_goals | Global + per-course goals | self all |
+| study_shared_day_plans | Opt-in shared plan snapshots | self all + group-read if share_daily_plan |
+| Storage avatars | User-uploaded avatars (public read) | self insert/update/delete; auth read |
+
+### Migrations (7 files)
+
+| File | Changes |
+|---|---|
+| STUDY-TOGETHER-SQL.sql | V1 base: 4 tables, RLS, RPC (create/join/leave/delete/revoke) |
+| study-together-2.0-migrations.sql | M1 study_courses, M2 session.course_id + trigger, M3 profile fields |
+| study-together-5.0-migrations.sql | avatar_url + avatars bucket + 4 policies |
+| study-together-6.0-migrations.sql | share_daily_plan + shared_day_plans |
+| study-together-8.0-migrations.sql | session_type column |
+| study-together-10.0-migrations.sql | study_goals + best_streak_days |
+| study-together-11.0-migrations.sql | weekly_goal_minutes |
+
+### localStorage keys
+
+| Key | Purpose |
+|---|---|
+| internship-os.study-together.pending | Pending session recovery |
+| internship-os.study-together.pomodoro.v1 | Pomodoro marker |
+| internship-os.study-together.cache.[uid].v1 | Snapshot per user |
+| internship-os.study-together.lastuid | Last uid for offline boot |
+| internship-os.study-together.reminder.[date] | Daily reminder dismissed |
+
+### Realtime (ADR-094 invariants preserved)
+
+- Heartbeat 30s (only while room open — _heartbeatTimer)
+- Closure capture per channel (_channel !== ch guard)
+- Backoff 3-6-12-24-30s (single schedulePresenceReconnect after Wave 9 fix)
+- setAuth on token change (_lastAuthToken cache)
+- _channel.state === "joined" gate before track()
+- 30s UI tick separate from heartbeat
+
+### Save pattern (canonical)
+
+    function _saveX() {
+      // 1. Read ALL inputs FIRST
+      var inputEl = S.container.querySelector('[data-st-setting="foo"]');
+      var val = inputEl ? inputEl.value : null;
+
+      // 2. Build patch
+      var patch = { foo: val, updated_at: new Date().toISOString() };
+
+      // 3. THEN set busy + render
+      S.busy = true; render();
+
+      // 4. Update + verify
+      _sb.from("profiles").update(patch).eq("id", S.user.id).select().single()
+        .then(function (r) {
+          if (r && r.error) throw r.error;
+          if (!r || !r.data) throw new Error("save_not_applied");
+          S.busy = false;
+          render();
+        })
+        .catch(function (err) {
+          S.busy = false;
+          S.error = String(err && err.message || err);
+          render();
+        });
+    }
+
+Critical: render() before reading inputs causes DOM to reset to old state — writes OLD values.
+
+### Debug gating
+
+- window.__ST_DEBUG__ (default off) gates all [st] console.log
+- [st-bridge] warn preserved
+- Lifecycle globals preserved: _stOnlineHandler, _stOfflineHandler, _stExplicitLogout
+
+### Offline resilience
+
+- Cache written on every successful refreshAll
+- Cache applied at ST.open before network
+- _stOnlineHandler on reconnect triggers refreshAll + optimistic S.offline = false
+- _stOfflineHandler sets S.offline = true + render (no state wipe)
+- _isNetworkError(e) distinguishes network errors from auth errors
+- No auto-logout on network error (only _stExplicitLogout from user click)
+
+### Last seen (Wave 17)
+
+- profiles.last_seen_at timestamptz nullable
+- Tracked on: visibilitychange=hidden, pagehide, beforeunload, offline, logout, ST.close
+- 60s throttle on auto (_touchLastSeen(false)); force on explicit (_touchLastSeen(true))
+- Display: _fmtLastSeen(isoStr) -> relative Persian time with absolute time in parentheses
+
+### Frozen (unchanged)
+
+- Schema v22 (Internship OS core)
+- window.INTERNSHIP_STATE
+- state.tasks, state.residency.activities
+- study_sessions structure (except course_id + session_type which are additive)
+- ADR-091..094 + ADR-100..107
+- Server trigger enforce_session_course_owner
+- service_role never in client

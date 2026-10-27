@@ -676,3 +676,61 @@ Wave 3 committed. Study Together 2.0 (V1 + W1 + W2 + W3) shipped on `main`. V1 R
 ### Awaiting
 
 Design Agent directive for Wave 4 (or other phase).
+
+
+## Session Update (2026-10-27 · Agent #29)
+
+Schema: v22 (no bump). Version: v1.0.1 (released).
+
+### Waves completed
+
+- Wave 4 — Bio, course edit/archive, visual overhaul
+- Wave 5 — Avatar upload, friend day view
+- Wave 6 — Shared daily plan
+- Wave 7 — Account center, Persian calendar, rich history
+- Wave 8 — Session type, bulk categorize
+- Wave 9 — Live co-study room, ST-04 fix
+- Wave 10 — Goals, streaks, Persian dates
+- Wave 11 — Group weekly goal
+- Wave 12 — Weekly leaderboard, weekly recap
+- Wave 13 — Help FAB, loading states, offline resilience
+- Wave 14 — Offline boot fix, logout relocation, chip fix
+- Wave 15 — Server reset (data-only), debug cleanup, save bug fix
+- Wave 16 — Full installer v1.0.0
+- Wave 17 — Last seen label (v1.0.1)
+
+### Releases
+
+- v1.0.0 — 2026-10-23 — commit `9907521`
+- v1.0.1 — 2026-10-27 — commit `3559da7`
+- `study-together-v1.0.0` — subsystem tag (preserved)
+
+### Key invariants (new)
+
+- **Save functions**: read inputs → build patch → `S.busy = true; render()` → update → `.select().single()` → check `r.data`.
+  - **NEVER `render()` before reading inputs** — DOM resets to old state and save writes OLD values
+- **All DB updates**: `.select().single()` + `if (!r || !r.data) throw` — detects silent 0-row RLS failures
+- **`_stDbg()` gate**: all `console.log("[st]...")` behind `window.__ST_DEBUG__`
+- **`_connChipHTML()`** — single source of truth for connection chip
+- **`_touchLastSeen(force)`** — 60s throttle on auto, force on explicit exit
+- **`_fmtLastSeen(iso)`** — Persian relative time (e.g., "۲ ساعت پیش (۱۴:۳۰)")
+- **Last seen transitions**: visibilitychange=hidden, pagehide, beforeunload, offline, logout, ST.close
+- **Config fallback**: `app/study-together-defaults.js` (in git) + `data/study-together.js` (owner-supplied, gitignored)
+- **WebView2 cache**: after release, owner must delete `%LOCALAPPDATA%\InternshipOS\WebView2` before testing
+
+### Known issues added
+
+- ISSUE-ST-04 — presence reconnect duplication (pre-existing V1)
+- ISSUE-ST-05 — 2-layer privacy (RLS gates only `share_daily_total`)
+
+### Frozen — unchanged
+
+Schema v22, `window.INTERNSHIP_STATE`, `state.tasks`, `state.residency.activities`, SQL/RLS on core tables, ADR-081, ADR-091..094, ADR-100..103.
+
+### Last completed
+
+v1.0.1 released. All Study Together 2.0 features shipped.
+
+### Awaiting
+
+Design Agent or owner directive for bug fixes.

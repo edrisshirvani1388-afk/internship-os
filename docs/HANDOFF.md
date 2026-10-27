@@ -390,3 +390,97 @@ V1 + Wave 1 + Wave 2 + Wave 3 همه commit شده. Release Gate: `OPEN — PRIV
 | Study Together 2.0 Wave 2 | COMMITTED |
 | Study Together 2.0 Wave 3 | COMMITTED |
 | Next phase | Await Design Agent |
+
+
+---
+
+## For Agent #30
+
+### Environment
+
+- Repo: `D:\Desktop\.internship-os\internship-os`
+- Schema: v22 (no bump)
+- Version: v1.0.1
+- HEAD: `3559da7`
+- origin/main: in sync
+
+### Current status
+
+Study Together 1.0.1 — Private Pilot with documented limitations.
+Full installer released (v1.0.1), auto-update active.
+
+### What was shipped (cumulative)
+
+- V1 + Waves 1-3 (Agent #28): presence, courses, stats, leaderboard
+- Wave 4: Bio, course edit/archive, visual overhaul
+- Wave 5: Avatar upload/remove, friend day view
+- Wave 6: Shared daily plan, friend schedule
+- Wave 7: Account center, Persian calendar, rich history
+- Wave 8: Session type, bulk categorize
+- Wave 9: Live room + ST-04 fix
+- Wave 10: Goals, streaks, Persian dates
+- Wave 11: Group weekly goal
+- Wave 12: Weekly leaderboard, recap
+- Wave 13: Help, loading states, offline resilience
+- Wave 14: Offline boot fix, logout relocation, chip fix
+- Wave 15: Server reset, debug cleanup, save bug fix
+- Wave 16: Full installer v1.0.0
+- Wave 17: Last seen label (v1.0.1)
+
+### Critical invariants for Agent #30
+
+- `window.__os` is REASSIGNED in `boot()` — poll-until-ready
+- Realtime: heartbeat <=30s, closure-capture per channel, backoff 3-6-12-24-30, setAuth on token change, joined-state gate
+- Server trigger `private.enforce_session_course_owner` (error 42501)
+- `_toPersianDigits` for zero-padded (NOT `fa0`)
+- render dispatch: `innerHTML = renderX(); wire(); return;` (not `return renderX()`)
+- **Save functions MUST read inputs BEFORE render()** — otherwise DOM resets to old state
+- All DB updates: `.select().single()` + `if (!r || !r.data) throw` to detect silent 0-row
+- `window.__ST_DEBUG__` gates all `[st]` logs
+- `_stOnlineHandler` / `_stOfflineHandler` / `_stExplicitLogout` — lifecycle, not debug-only, keep
+- `data/study-together.js` owner-supplied gitignored; `app/study-together-defaults.js` fallback in git
+- `_connChipHTML()` — single source of truth for connection chip
+- `_touchLastSeen(force)` — 60s throttle auto, force explicit
+
+### Release workflow (critical)
+
+1. `Get-Process InternshipOS -EA SilentlyContinue | Stop-Process -Force` (release.ps1 needs unlocked server/)
+2. `cd D:\Desktop\.internship-os\internship-os; .\release.ps1 -Version X.Y.Z -Notes "..."`
+3. After release, owner MUST delete WebView2 cache before testing:
+   `Remove-Item "$env:LOCALAPPDATA\InternshipOS\WebView2" -Recurse -Force`
+4. Start exe from install path: `C:\Users\M. Edris Sirvani\AppData\Local\Programs\InternshipOS\server\InternshipOS.exe`
+5. Verify footer shows new version
+
+### WebView2 cache issue (recurring)
+
+Any release with `app/data.js` changes requires cache delete. Without it, footer shows stale version. This is WebView2 HTTP cache, not a bug — expected behavior.
+
+### Pending decisions (require Design Agent approval)
+
+- Bugs reported by owner (primary Wave 18 task)
+- ISSUE-ST-04 (presence reconnect duplication)
+- ISSUE-ST-05 (RLS extension for share flags)
+- Offline sync queue (needs ADR)
+- Group chat / activity feed (design decision)
+
+### Recommended first actions
+
+1. Await Design Agent or owner directive — no autonomous work
+2. Bootstrap audit script (git HEAD + tags + function line map)
+3. Read `AGENT-30-PROMPT.md` full
+
+### Files to read first (order)
+
+Same as AGENT-30-PROMPT.md section `ترتیب خواندن`
+
+### Roadmap status
+
+| Phase | Status |
+|---|---|
+| V1 + Waves 1-3 | COMMITTED |
+| Waves 4-14 | COMMITTED |
+| Wave 15 (server reset) | COMMITTED |
+| v1.0.0 release | RELEASED 2026-10-23 |
+| Wave 17 (last seen) | COMMITTED |
+| v1.0.1 release | RELEASED 2026-10-27 |
+| Next phase | Await owner — bug fixes (Wave 18) |

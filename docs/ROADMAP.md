@@ -653,3 +653,83 @@ V1 Release Gate همچنان `OPEN — PRIVATE PILOT WITH DOCUMENTED LIMITATIONS
 - Group chat / activity feed
 - ISSUE-ST-04 fix (presence reconnect)
 - Push to origin/main (3 commits ahead)
+
+
+---
+
+## WAVES 4-17 — Study Together 2.0 Product Completion (2026-10-23 → 2026-10-27)
+
+### Waves 4-8 (Agent #29, 2026-10-23)
+
+| Wave | Scope |
+|---|---|
+| 4 | Bio + course edit/archive + visual overhaul |
+| 5 | Avatar upload + friend day view |
+| 6 | Shared daily plan + friend schedule |
+| 7 | Account center + Persian calendar + rich history |
+| 8 | Session type + bulk categorize |
+
+### Waves 9-14 (Agent #29)
+
+| Wave | Scope |
+|---|---|
+| 9 | Live co-study room + ISSUE-ST-04 fix |
+| 10 | Goals + streaks + Persian dates |
+| 11 | Group weekly goal |
+| 12 | Weekly leaderboard + recap |
+| 13 | Help + loading + offline resilience |
+| 14 | Offline boot fix + logout relocation + chip fix |
+
+### RELEASED - v1.0.0 - 2026-10-23
+
+- Full installer on GitHub: https://github.com/edrisshirvani1388-afk/internship-os/releases/tag/v1.0.0
+- Commit: `9907521`
+- Tag: `v1.0.0`
+- Installer: `InternshipOS-Setup-v1.0.0.exe` (56.16 MB)
+- SHA256: `A75A4BCB804AE7A74E183C70AC481332C807FB0E5CADA81794A59681F9E23994`
+- Includes: Study Together 1.0.0 with all Waves 1-14
+- Default config embedded (`app/study-together-defaults.js`)
+
+### Wave 15 (Server reset, 2026-10-27)
+
+- Data reset: 7 tables truncated, 10 auth.users deleted, storage cleared
+- Schema v22, RLS, triggers, migrations PRESERVED
+- Debug cleanup: `[st]` logs behind `window.__ST_DEBUG__`
+- Save bug fix: `_savePrivacy` `render()` moved to after `patch` construction; `.select().single()` for 0-row detection
+
+### Wave 16 — v1.0.0 installer (2026-10-23)
+
+- `release.ps1 -Version 1.0.0`
+- Full installer with new config fallback
+
+### Wave 17 — Last seen label (2026-10-27)
+
+- `profiles.last_seen_at` tracked on 6 transitions
+- Friend cards show relative Persian time when offline
+- Release: v1.0.1, commit `3559da7`
+- Tag: `v1.0.1`
+- Installer: `InternshipOS-Setup-v1.0.1.exe` (56.16 MB)
+- SHA256: `D2436F433E28BE6DBBCC5B9FF6D9A26E3D1AEAB913E1374D9A7D1ED0A310FBAE`
+
+### Current state (2026-10-27)
+
+- Internship OS: v1.0.1
+- Study Together: v1.0.1
+- Schema: v22
+- Release Gate: PRIVATE PILOT with documented limitations
+
+### Next phase (Wave 18, Agent #30)
+
+- Bug fixes reported by owner (pending)
+- Await Design Agent / owner directive
+
+---
+
+## FROZEN (Study Together 2.0)
+
+- Schema v22
+- `window.INTERNSHIP_STATE` (read-only)
+- `study_sessions` structure
+- ADR-091..094 + ADR-100..107
+- Server trigger `enforce_session_course_owner`
+- `service_role` never in client

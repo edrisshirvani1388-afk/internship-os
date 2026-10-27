@@ -470,3 +470,68 @@ V1 همچنان `OPEN — PRIVATE PILOT WITH DOCUMENTED LIMITATIONS`. توسعه
 ### Next
 
 Await Design Agent directive for Wave 4 (Storage/avatar upload، group analytics cross-user، custom pomodoro، offline sync queue، presence reconnect fix).
+
+
+---
+
+## AGENT-29 CLOSEOUT - 2026-10-27
+
+**Schema:** v22 (no bump). **Version:** v1.0.1.
+
+### Waves delivered
+
+| Wave | Status |
+|---|---|
+| Wave 4 (Bio + course edit + visual overhaul) | done |
+| Wave 5 (Avatar upload + friend day) | done |
+| Wave 6 (Shared daily plan) | done |
+| Wave 7 (Account center + Persian calendar + rich history) | done |
+| Wave 8 (Session type + bulk categorize) | done |
+| Wave 9 (Live room + ST-04 fix) | done |
+| Wave 10 (Goals + Streaks + Persian dates) | done |
+| Wave 11 (Group weekly goal) | done |
+| Wave 12 (Weekly leaderboard + recap) | done |
+| Wave 13 (Help + offline resilience) | done |
+| Wave 14 (Offline boot + logout relocation + chip fix) | done |
+| Wave 15 (Server reset + debug cleanup + save bug fix) | done |
+| Wave 16 (Full installer v1.0.0) | done |
+| Wave 17 (Last seen label, v1.0.1) | done |
+
+### Releases
+
+- **v1.0.0** — `9907521` — 2026-10-23 — Full installer on GitHub
+- **v1.0.1** — `3559da7` — 2026-10-27 — Last seen label
+
+### Tags on remote
+
+- `study-together-v1.0.0` — subsystem tag (preserved)
+- `v1.0.0`, `v1.0.1` — full installer tags
+
+### Key fixes (Agent #29)
+
+- Save bug (`_savePrivacy`): `render()` moved after `patch` construction
+- Save bug (all save funcs): `.select().single()` + `r.data` check — detects silent 0-row RLS
+- Offline boot: `getSession()` null fallback to `K_LASTUID` cache
+- `SIGNED_OUT` handling: `_stExplicitLogout` flag
+- Chip offline override: `_connChipHTML()` helper + `S.offline` check
+- Debug gating: all `[st]` logs behind `window.__ST_DEBUG__`
+- Last seen: tracked on 6 transitions (visibilitychange / pagehide / beforeunload / offline / logout / ST.close)
+- Default config: `app/study-together-defaults.js` fallback for fresh installs
+- 60s throttle on `refreshAll` to avoid write spam
+
+### Known limitations (accepted)
+
+- Two-account live room — NOT TESTED (WebView2 single-instance)
+- Physical internet cut offline boot — NOT TESTED
+- SMTP email verification — NOT TESTED
+- Live cross-account cache isolation — NOT TESTED
+- WebView2 cache stale after release — must delete `%LOCALAPPDATA%\InternshipOS\WebView2`
+
+### Git state
+
+- HEAD: `3559da7` — `release: v1.0.1`
+- origin/main: in sync
+
+### Next
+
+Await Design Agent or owner directive for bug fixes (Wave 18).

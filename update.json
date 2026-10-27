@@ -1,9 +1,9 @@
 {
-    "publishedAt":  "2026-10-23",
-    "releaseNotes":  "Internship OS 1.0.0 — Study Together Private Pilot\n\nIncludes Study Together 1.0.0: Live room, Focus Studio, Profile+avatar, History (Jalali calendar + bulk categorize), Statistics, Goals, Streaks, Weekly Leaderboard, Group weekly goal, Shared daily plan, Per-page help, Offline resilience.\n\nData reset: schema/RLS/triggers/migrations preserved.\n\nDefault Supabase config embedded for fresh installs.\n\nPRIVATE PILOT limitations: two-account room NOT TESTED, physical internet cut NOT TESTED, SMTP disabled, cross-account cache isolation NOT TESTED.",
-    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.0/InternshipOS-Setup-v1.0.0.exe",
-    "sha256":  "A75A4BCB804AE7A74E183C70AC481332C807FB0E5CADA81794A59681F9E23994",
-    "sizeBytes":  58885393,
-    "latest":  "1.0.0",
-    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.0/InternshipOS-Setup-v1.0.0.exe"
+  "releaseNotes": "Internship OS 1.0.1 — Last Seen Label\n\nNew:\n- last_seen_at per user (tracked on visibilitychange, pagehide, beforeunload, offline, logout, ST.close)\n- Friend/member cards show relative Persian time when user is offline: '2 hours ago (14:30)', 'yesterday 14:30', '5 Aban 1405 (14:30)'\n- Online indicator still driven by Supabase Presence (no extra heartbeat)\n- 60s throttle on refreshAll to avoid write spam\n\nSchema v22 preserved. No breaking changes.",
+  "publishedAt": "2026-10-27",
+  "installerUrl": "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.1/InternshipOS-Setup-v1.0.1.exe",
+  "sizeBytes": 58890896,
+  "sha256": "D2436F433E28BE6DBBCC5B9FF6D9A26E3D1AEAB913E1374D9A7D1ED0A310FBAE",
+  "zipUrl": "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.1/InternshipOS-Setup-v1.0.1.exe",
+  "latest": "1.0.1"
 }

@@ -1,17 +1,17 @@
 {
-    "highlights":  [
-                       "Internship OS 1.0.0 — Study Together Private Pilot",
-                       "",
-                       "Includes Study Together 1.0.0: Live room, Focus Studio, Profile+avatar, History (Jalali calendar + bulk categorize), Statistics, Goals, Streaks, Weekly Leaderboard, Group weekly goal, Shared daily plan, Per-page help, Offline resilience.",
-                       "",
-                       "Data reset: schema/RLS/triggers/migrations preserved.",
-                       "",
-                       "Default Supabase config embedded for fresh installs.",
-                       "",
-                       "PRIVATE PILOT limitations: two-account room NOT TESTED, physical internet cut NOT TESTED, SMTP disabled, cross-account cache isolation NOT TESTED."
-                   ],
-    "schema":  22,
-    "version":  "1.0.0",
-    "releasedAt":  "2026-10-23",
-    "notes":  "v1.0.0"
+  "schema": 22,
+  "version": "1.0.1",
+  "notes": "v1.0.1",
+  "highlights": [
+    "Internship OS 1.0.1 — Last Seen Label",
+    "",
+    "New:",
+    "- last_seen_at per user (tracked on visibilitychange, pagehide, beforeunload, offline, logout, ST.close)",
+    "- Friend/member cards show relative Persian time when user is offline: '2 hours ago (14:30)', 'yesterday 14:30', '5 Aban 1405 (14:30)'",
+    "- Online indicator still driven by Supabase Presence (no extra heartbeat)",
+    "- 60s throttle on refreshAll to avoid write spam",
+    "",
+    "Schema v22 preserved. No breaking changes."
+  ],
+  "releasedAt": "2026-10-27"
 }

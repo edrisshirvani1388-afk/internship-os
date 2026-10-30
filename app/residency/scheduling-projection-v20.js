@@ -120,7 +120,7 @@
       sourceType: "task",
       sourceId: task.id,
       title: _pickTitle(task, ""),
-      category: task.areaId || "",
+      category: task.areaId || "", catHint: task._catHint || null,
       date: task.date,
       startTime: startTime,
       endTime: endTime,
@@ -257,28 +257,87 @@
   /* [PATCH:mvp02] Virtual recurrence expansion */
   function _addDaysJ(d, n){ var p=DATE.parseJalali(d); if(!p)return null; var r=DATE.addJalaliDays(p.jy,p.jm,p.jd,n); return DATE.dateKey(r.jy,r.jm,r.jd); }
   function _addMonthsJ(d, n){ var p=DATE.parseJalali(d); if(!p)return null; var r=DATE.addJalaliMonthsToDate(p.jy,p.jm,p.jd,n); return DATE.dateKey(r.jy,r.jm,r.jd); }
-  function _expandRecurrence(task, baseItem, rangeStart, rangeEnd){
-    if(!task || !task.recurrence || task.recurrence === "none") return [];
-    if(!rangeStart || !rangeEnd) return [];
-    var step;
-    if(task.recurrence === "daily") step = function(d){ return _addDaysJ(d,1); };
-    else if(task.recurrence === "weekly") step = function(d){ return _addDaysJ(d,7); };
-    else if(task.recurrence === "monthly") step = function(d){ return _addMonthsJ(d,1); };
-    else return [];
-    var out=[]; var safety=0; var d=step(task.date);
-    while(d && _cmpDate(d, rangeEnd) <= 0 && safety < 5000){
-      safety++;
-      if(_cmpDate(d, rangeStart) >= 0 && d !== task.date){
+  function _weekdayIdxJalaliLocal(jy, jm, jd){
+  try {
+    if (!DATE || !DATE.jalaliToGregorian) return -1;
+    var g = DATE.jalaliToGregorian(jy, jm, jd);
+    if (!g || g.length < 3) return -1;
+    var dt = new Date(g[0], g[1] - 1, g[2]);
+    return (dt.getDay() + 1) % 7;
+  } catch(e) { return -1; }
+}
+function _jalaliDayNum(jy, jm, jd){
+  try {
+    if (!DATE || !DATE.jalaliToDayNumber) return null;
+    var n = DATE.jalaliToDayNumber(jy, jm, jd);
+    if (typeof n === "number" && !isNaN(n)) return n;
+    return null;
+  } catch(e) { return null; }
+}
+function _expandRecurrence(task, baseItem, rangeStart, rangeEnd){
+  if(!task || !task.recurrence || task.recurrence === "none") return [];
+  if(!rangeStart || !rangeEnd) return [];
+  var _wds = (task.recurrence === "weekly" && Array.isArray(task.recurrenceWeekdays))
+    ? task.recurrenceWeekdays.filter(function(x){ return typeof x === "number" && x >= 0 && x <= 6; })
+    : [];
+  var _useWdFilter = (task.recurrence === "weekly" && _wds.length > 0);
+  var _wdSet = {};
+  if (_useWdFilter) { for (var wi=0; wi<_wds.length; wi++) _wdSet[_wds[wi]] = true; }
+  var _interval = (task.recurrenceInterval && task.recurrenceInterval >= 1) ? Math.floor(task.recurrenceInterval) : 1;
+  var _maxCount = (task.recurrenceCount && task.recurrenceCount >= 1) ? Math.floor(task.recurrenceCount) : 0;
+
+  var _baseP = DATE.parseJalali(task.date);
+  var _baseDayNum = _baseP ? _jalaliDayNum(_baseP.jy, _baseP.jm, _baseP.jd) : null;
+
+  var step;
+  if(task.recurrence === "daily") step = function(d){ return _addDaysJ(d, _interval); };
+  else if(task.recurrence === "weekly") { step = _useWdFilter ? function(d){ return _addDaysJ(d,1); } : function(d){ return _addDaysJ(d, 7 * _interval); }; }
+  else if(task.recurrence === "monthly") step = function(d){ return _addMonthsJ(d, _interval); };
+  else return [];
+
+  var out = []; var safety = 0; var emitted = 0;
+  var d = step(task.date);
+  while(d && _cmpDate(d, rangeEnd) <= 0 && safety < 5000){
+    safety++;
+    if(_cmpDate(d, rangeStart) >= 0 && d !== task.date){
+      if (task.recurrenceEnd) {
+            var _endP = DATE.parseJalali(task.recurrenceEnd);
+            var _dP = DATE.parseJalali(d);
+            if (_endP && _dP) {
+                if (_dP.jy > _endP.jy) break;
+                if (_dP.jy === _endP.jy && _dP.jm > _endP.jm) break;
+                if (_dP.jy === _endP.jy && _dP.jm === _endP.jm && _dP.jd > _endP.jd) break;
+            }
+          }
+      var _pass = true;
+      if (_useWdFilter) {
+        var _pp = String(d).split("/");
+        var _wdIdx = -1;
+        if (_pp.length === 3) { _wdIdx = _weekdayIdxJalaliLocal(+_pp[0], +_pp[1], +_pp[2]); }
+        if (_wdIdx < 0 || !_wdSet[_wdIdx]) { _pass = false; }
+        if (_pass && _interval > 1 && _baseDayNum !== null) {
+          var _cp = DATE.parseJalali(d);
+          var _curDayNum = _cp ? _jalaliDayNum(_cp.jy, _cp.jm, _cp.jd) : null;
+          if (_curDayNum !== null) {
+            var _weeks = Math.floor((_curDayNum - _baseDayNum) / 7);
+            if (_weeks % _interval !== 0) { _pass = false; }
+          }
+        }
+      }
+      if (_pass) {
+        emitted++;
+        if (_maxCount > 0 && emitted > _maxCount) { break; }
         var exc = task.recurrenceExceptions && task.recurrenceExceptions[d];
+        if (exc === "skipped") { d = step(d); continue; }
         var st = "pending";
         if(exc === "completed") st = "completed";
-        else if(exc === "skipped") st = "cancelled";
-        if (!(task.recurrenceEnd && d > task.recurrenceEnd)) out.push({ id: "virtual:" + task.id + "@" + d, /* PATCH:phase-F7-recEnd */ sourceType: "task", sourceId: task.id, title: baseItem.title, category: baseItem.category, date: d, startTime: baseItem.startTime, endTime: baseItem.endTime, durationMinutes: baseItem.durationMinutes, role: baseItem.role, status: st, context: null, isVirtual: true, parentTaskId: task.id, occurrenceDate: d });
+        out.push({ id: "virtual:" + task.id + "@" + d, sourceType: "task", sourceId: task.id, title: baseItem.title, category: baseItem.category, catHint: task._catHint || null, date: d, startTime: baseItem.startTime, endTime: baseItem.endTime, durationMinutes: baseItem.durationMinutes, role: baseItem.role, status: st, context: null, isVirtual: true, parentTaskId: task.id, occurrenceDate: d });
       }
-      d = step(d);
     }
-    return out;
+    d = step(d);
   }
+  return out;
+}
 
   SP.projectAll = function (state, options) {
     options = options || {};
@@ -296,7 +355,14 @@
       if (options.skipReminders && !t.durationMinutes && !t.time) return;
       try {
         var item = SP.projectTask(t);
-        if (item) { items.push(item); var _vrts = _expandRecurrence(t, item, rangeStart, rangeEnd); for (var _vi=0; _vi<_vrts.length; _vi++) items.push(_vrts[_vi]); }
+        if (item) {
+          var _baseSkipped = (t.recurrence && t.recurrence !== "none" && t.recurrenceExceptions && t.recurrenceExceptions[t.date] === "skipped");
+          if (!_baseSkipped) {
+            items.push(item);
+          }
+          var _vrts = _expandRecurrence(t, item, rangeStart, rangeEnd);
+          for (var _vi=0; _vi<_vrts.length; _vi++) items.push(_vrts[_vi]);
+        }
       } catch (e) {
         warnings.push({ sourceType: "task", sourceId: t.id, error: String(e) });
       }

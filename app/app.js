@@ -50,7 +50,7 @@
     { id: "breakfast", icon: "🍳", label: "صبحانه",    areaId: "food",     title: "صبحانه",    time: "07:30", durationMinutes: 30,  recurrence: "daily", enabled: true },
     { id: "lunch",     icon: "🍎", label: "نهار",      areaId: "food",     title: "نهار",      time: "13:00", durationMinutes: 45,  recurrence: "daily", enabled: true },
     { id: "dinner",    icon: "🍽️", label: "شام",       areaId: "food",     title: "شام",       time: "20:00", durationMinutes: 45,  recurrence: "daily", enabled: true },
-    { id: "hospital",  icon: "🏥", label: "بیمارستان", areaId: "clinical", title: "بیمارستان", time: "08:00", durationMinutes: 480, recurrence: "none",  enabled: true }
+    { id: "hospital",  icon: "🏥", label: "بیمارستان", areaId: "clinical", _catHint: "hospital", title: "بیمارستان", time: "08:00", durationMinutes: 480, recurrence: "none",  enabled: true }
   ];
 
   function _qaGetPresets() {
@@ -150,7 +150,7 @@
     var task = {
       id: _qaNewId(),
       title: p.title || p.label || "فعالیت",
-      areaId: p.areaId || "life",
+      areaId: p.areaId || "life", _catHint: p._catHint || null,
       date: date,
       time: p.time || "",
       durationMinutes: (typeof p.durationMinutes === "number" && p.durationMinutes > 0) ? p.durationMinutes : null,
@@ -2113,6 +2113,39 @@ function _dashRenderSelectedDate(dateKeyStr) {
     }
     if (!t) return;
     t.completed = !t.completed && !t.cancelled;
+    if (t.recurrence && t.recurrence !== "none" && !t.completed) {
+      _openRecurrenceScopeModal("تسک تکرارشونده: کدام وقوع تیک بخورد؟", function(scope) {
+        if (scope === "cancel") return;
+        if (scope === "this") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[t.date] = "completed";
+          t.updatedAt = Date.now();
+          saveState(); render();
+          return;
+        }
+        if (scope === "thisAndNext") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[t.date] = "completed";
+          var _lib = window.InternshipLib && window.InternshipLib.date;
+          if (_lib && _lib.parseJalali && _lib.addJalaliDays && _lib.dateKey) {
+            var p = _lib.parseJalali(t.date);
+            var prev = _lib.addJalaliDays(p.jy, p.jm, p.jd, -1);
+            t.recurrenceEnd = _lib.dateKey(prev.jy, prev.jm, prev.jd);
+          }
+          t.updatedAt = Date.now();
+          saveState(); render();
+          return;
+        }
+        if (scope === "all") {
+          t.completed = true;
+          t.updatedAt = Date.now();
+          if (_rtIsRelevantTask(t)) _rtNotify("task_completed", { id: t.id, date: t.date, sourceType: "task", title: t.title });
+          saveState(); render();
+        }
+      });
+      return;
+    }
+
     t.updatedAt = Date.now();
     if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
     try {
@@ -2429,7 +2462,8 @@ function _dashRenderSelectedDate(dateKeyStr) {
     return (h < 10 ? "0" : "") + h + ":" + (mm < 10 ? "0" : "") + mm;
   }
 
-  function _dashCatColor(cat, role, sourceType) {
+  function _dashCatColor(cat, role, sourceType, catHint) {
+    if (catHint === "hospital") cat = "hospital";
     if (sourceType === "residencyActivity") return "167, 139, 250";
     if (role === "anchor") return "239, 68, 68";
     var c = String(cat || "").toLowerCase();
@@ -2445,7 +2479,8 @@ function _dashRenderSelectedDate(dateKeyStr) {
     return "148, 163, 184";
   }
 
-  function _dashCatIcon(cat, role, sourceType) {
+  function _dashCatIcon(cat, role, sourceType, catHint) {
+    if (catHint === "hospital") cat = "hospital";
     if (sourceType === "residencyActivity") return "🎓";
     if (role === "anchor") return "🚨";
     var c = String(cat || "").toLowerCase();
@@ -2463,7 +2498,8 @@ function _dashRenderSelectedDate(dateKeyStr) {
     return "📌";
   }
 
-  function _dashCatLabel(cat, role, sourceType) {
+  function _dashCatLabel(cat, role, sourceType, catHint) {
+    if (catHint === "hospital") cat = "hospital";
     if (sourceType === "residencyActivity") return "رزیدنتی";
     if (role === "anchor") return "زمان ثابت";
     var c = String(cat || "").toLowerCase();
@@ -2659,7 +2695,8 @@ function _dashRenderSelectedDate(dateKeyStr) {
       blk.classList.remove("is-dragging");
 
       if (!moved) {
-        openTaskForm(taskId);
+        var vid = blk.getAttribute("data-bar-vid");
+        openTaskForm(vid || taskId);
         return;
       }
 
@@ -2922,7 +2959,8 @@ function _dashRenderSelectedDate(dateKeyStr) {
       render();
     });
   }
-  function _dashCatClass(cat, role, sourceType) {
+  function _dashCatClass(cat, role, sourceType, catHint, title) {
+    if (catHint === "hospital" || cat === "hospital" || (title && title.indexOf("بیمارستان") >= 0)) return "is-hospital";
     if (sourceType === "residencyActivity") return "is-residency";
     if (role === "anchor") return "is-anchor";
     var c = String(cat || "").toLowerCase();
@@ -2931,7 +2969,6 @@ function _dashRenderSelectedDate(dateKeyStr) {
     if (c === "study" || c === "review" || c === "assessment") return "is-study";
     if (c === "body" || c === "exercise") return "is-body";
     if (c === "clinical" || c === "case") return "is-clinical";
-    if (c === "hospital") return "is-hospital";
     if (c === "sleep" || c === "rest") return "is-sleep";
     if (c === "life" || c === "personal") return "is-life";
     if (c === "income") return "is-income";
@@ -3534,7 +3571,7 @@ function _dashRenderSelectedDate(dateKeyStr) {
       var widthPct = ((e - s) / span) * 100;
       if (widthPct <= 0) return;
 
-      var catCls = _isResidencyLinkedItem(it) ? "is-residency" : _dashCatClass(it.category, it.role, it.sourceType);
+      var catCls = _isResidencyLinkedItem(it) ? "is-residency" : _dashCatClass(it.category, it.role, it.sourceType, it.catHint, it.title);
       var cls = "dash-daybar-block " + catCls;
       var _isDone = (it.status === "completed" || it.status === "done");
       if (_isDone) cls += " is-completed";
@@ -3548,6 +3585,7 @@ function _dashRenderSelectedDate(dateKeyStr) {
       var tooltip = title + ' · ' + seStr;
       var dataAttrs = ' data-bar-source="' + (it.sourceType || '') + '"' +
                       ' data-bar-id="' + (it.sourceId || '') + '"' +
+                      ' data-bar-vid="' + (it.id || '') + '"' +
                       ' data-bar-start="' + _minToHHMM(effStart) + '"' +
                       ' data-bar-end="' + _minToHHMM(effEnd) + '"' +
                       ' data-bar-duration="' + (effEnd - effStart) + '"';
@@ -3565,7 +3603,7 @@ function _dashRenderSelectedDate(dateKeyStr) {
                   '<span class="dbar-handle dbar-handle-r" data-handle="right"></span>';
       }
 
-      blocks.push('<span class="' + cls + '" style="left:' + startPct + '%;width:' + widthPct + '%;--bar-tip-c:' + _dashCatColor(it.category, it.role, it.sourceType) + '"' + dataAttrs + '>' + handles + '</span>');
+      blocks.push('<span class="' + cls + '" style="left:' + startPct + '%;width:' + widthPct + '%;--bar-tip-c:' + _dashCatColor(it.category, it.role, it.sourceType, it.catHint) + '"' + dataAttrs + '>' + handles + '</span>');
     });
 
     (prevItems || []).forEach(function (it) {
@@ -3581,9 +3619,9 @@ function _dashRenderSelectedDate(dateKeyStr) {
       var startPct = ((s - range.start) / span) * 100;
       var widthPct = ((e - s) / span) * 100;
       if (widthPct <= 0) return;
-      var catCls = _isResidencyLinkedItem(it) ? "is-residency" : _dashCatClass(it.category, it.role, it.sourceType);
+      var catCls = _isResidencyLinkedItem(it) ? "is-residency" : _dashCatClass(it.category, it.role, it.sourceType, it.catHint, it.title);
       var cls = "dash-daybar-block " + catCls + " is-continued";
-      blocks.push('<span class="' + cls + '" style="left:' + startPct + '%;width:' + widthPct + '%;--bar-tip-c:' + _dashCatColor(it.category, it.role, it.sourceType) + '"></span>');
+      blocks.push('<span class="' + cls + '" style="left:' + startPct + '%;width:' + widthPct + '%;--bar-tip-c:' + _dashCatColor(it.category, it.role, it.sourceType, it.catHint) + '"></span>');
     });
 
     var nowHTML = "";
@@ -3808,18 +3846,69 @@ function _dashWeekLabel() {
   }
 
 
+  function _openRecurrenceScopeModal(title, onSelect) {
+    var ov = document.createElement("div");
+    ov.className = "modal-overlay open";
+    ov.style.zIndex = "9999";
+    ov.innerHTML = '<div class="modal" style="max-width:360px; padding:20px;">' +
+      '<div style="margin-bottom:12px; font-weight:bold; font-size:15px; color:#fff;">' + title + '</div>' +
+      '<div style="display:flex; flex-direction:column; gap:8px;">' +
+        '<button class="btn ghost scope-btn" data-scope="this" style="justify-content:flex-start; padding:12px 16px;">🎯 فقط این رویداد</button>' +
+        '<button class="btn ghost scope-btn" data-scope="thisAndNext" style="justify-content:flex-start; padding:12px 16px;">⏭️ این و رویدادهای بعدی</button>' +
+        '<button class="btn ghost scope-btn" data-scope="all" style="justify-content:flex-start; padding:12px 16px;">📋 همه رویدادها</button>' +
+      '</div>' +
+      '<div style="margin-top:16px; text-align:center;">' +
+        '<button class="btn" data-scope="cancel" style="width:100%; padding:10px; background:transparent; color:#aaa; border:1px solid rgba(255,255,255,0.1)">لغو</button>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click", function(e) {
+      if (e.target === ov) { ov.remove(); onSelect("cancel"); return; }
+      var btn = e.target.closest("[data-scope]");
+      if (btn) {
+        var val = btn.getAttribute("data-scope");
+        ov.remove();
+        onSelect(val);
+      }
+    });
+  }
+
   function toggleTask(id) {
-    // [PATCH:mvp02] virtual occurrence
-    if (typeof id === "string" && id.indexOf("virtual:") === 0) {
-      return _toggleVirtualOccurrence(id);
+    if (t.recurrence && t.recurrence !== "none" && !t.completed) {
+      _openRecurrenceScopeModal("تسک تکرارشونده: کدام وقوع تیک بخورد؟", function(scope) {
+        if (scope === "cancel") return;
+        if (scope === "this") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[t.date] = "completed";
+          t.updatedAt = Date.now();
+          saveState(); render();
+          return;
+        }
+        if (scope === "thisAndNext") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[t.date] = "completed";
+          var _lib = window.InternshipLib && window.InternshipLib.date;
+          if (_lib && _lib.parseJalali && _lib.addJalaliDays && _lib.dateKey) {
+            var p = _lib.parseJalali(t.date);
+            var prev = _lib.addJalaliDays(p.jy, p.jm, p.jd, -1);
+            t.recurrenceEnd = _lib.dateKey(prev.jy, prev.jm, prev.jd);
+          }
+          t.updatedAt = Date.now();
+          saveState(); render();
+          return;
+        }
+        if (scope === "all") {
+          t.completed = true;
+          t.updatedAt = Date.now();
+          if (_rtIsRelevantTask(t)) _rtNotify("task_completed", { id: t.id, date: t.date, sourceType: "task", title: t.title });
+          saveState(); render();
+        }
+      });
+      return;
     }
-    const t = state.tasks.find((x) => x.id === id);
-    if (!t) return;
-    const wasCompleted = t.completed;
-    t.completed = !t.completed && !t.cancelled;
+
     t.updatedAt = Date.now();
     if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
-    if (t.completed) spawnNextOccurrence(t);
     // ─── [PATCH:v4-task-activity-sync] propagate completion to residency activity ───
     try {
       if (window.InternshipResidency && window.InternshipResidency.taskProjection) {
@@ -7266,6 +7355,7 @@ function contentRefId(areaId, sourceType, sourceId) {
 
     return `
       <li class="task-row planner-row ${task.completed ? "done" : ""} ${isRotationLinked ? "rotation-linked" : ""}">
+        <input type="checkbox" class="bulk-cb" data-bulk-id="${task.id}">
         <span class="task-check" data-toggle-task="${task.id}" role="checkbox"
               aria-checked="${task.completed}" tabindex="0" aria-label="${escapeHTML(task.title)}"></span>
         <span class="task-title">${escapeHTML(task.title)}</span>
@@ -7631,6 +7721,15 @@ function contentRefId(areaId, sourceType, sourceId) {
   }
 
 function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
+    var _virtualMatch = null;
+    if (typeof taskId === "string") {
+      if (taskId.indexOf("virtual:") === 0) {
+        _virtualMatch = /^virtual:([^@]+)@(.+)$/.exec(taskId);
+        if (_virtualMatch) { taskId = _virtualMatch[1]; }
+      } else if (taskId.indexOf("task:") === 0) {
+        taskId = taskId.replace("task:", "");
+      }
+    }
     const isEdit = !!taskId;
     const task = isEdit ? state.tasks.find((t) => t.id === taskId) : null;
     if (isEdit && !task) return;
@@ -7638,8 +7737,18 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
     const t = parseJalali(todayJalali());
     let init;
     if (isEdit) {
-      const tp = parseJalali(task.date) || t;
-      init = { title: task.title, areaId: task.areaId, date: tp, time: task.time || "", priority: task.priority || "normal", description: task.description || "", recurrence: task.recurrence || "none", durationMinutes: (typeof task.durationMinutes === "number" ? task.durationMinutes : null), projectId: task.projectId || "" };
+      var _initDateStr = _virtualMatch ? _virtualMatch[2] : task.date;
+      init = {
+        title: task.title || "",
+        areaId: task.areaId || "clinical",
+        date: parseJalali(_initDateStr),
+        time: task.time || "",
+        priority: task.priority || "normal",
+        description: task.description || "",
+        recurrence: task.recurrence || "none",
+        durationMinutes: task.durationMinutes || null,
+        projectId: task.projectId || ""
+      };
     } else if (presetDate) {
       init = { title: "", areaId: (presetAreaId || (presetProjectId ? "income" : "clinical")), date: { jy: presetDate.jy, jm: presetDate.jm, jd: presetDate.jd }, time: "", priority: "normal", description: "", recurrence: "none", projectId: presetProjectId || "" };
     } else {
@@ -7707,6 +7816,43 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
           <label>تکرار</label>
           ${InternshipPickers.recurrence.render("tf", init.recurrence)}
         </div>
+        <div class="form-row" id="tf-rec-weekdays-row" style="display:none">
+          <label>روزهای تکرار</label>
+          <div class="tf-wd-grid">
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="0"><span class="tf-wd-slider"></span><span class="tf-wd-text">شنبه</span></label>
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="1"><span class="tf-wd-slider"></span><span class="tf-wd-text">یک‌شنبه</span></label>
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="2"><span class="tf-wd-slider"></span><span class="tf-wd-text">دوشنبه</span></label>
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="3"><span class="tf-wd-slider"></span><span class="tf-wd-text">سه‌شنبه</span></label>
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="4"><span class="tf-wd-slider"></span><span class="tf-wd-text">چهارشنبه</span></label>
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="5"><span class="tf-wd-slider"></span><span class="tf-wd-text">پنج‌شنبه</span></label>
+            <label class="tf-wd"><input type="checkbox" data-tf-wd="6"><span class="tf-wd-slider"></span><span class="tf-wd-text">جمعه</span></label>
+          </div>
+          <p class="form-hint">اگر روزی انتخاب نکنی، تسک هر هفته در همان روز شروع تکرار می‌شود.</p>
+        </div>
+        <div class="form-row" id="tf-rec-opts-row" style="display:none">
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label for="tf-rec-interval">هر چند بار</label>
+              <input type="number" id="tf-rec-interval" min="1" max="52" step="1" value="${(isEdit && task && task.recurrenceInterval) ? task.recurrenceInterval : 1}">
+            </div>
+            <div class="form-row">
+              <label for="tf-rec-count">تعداد تکرار</label>
+              <input type="number" id="tf-rec-count" min="0" max="500" step="1" placeholder="بدون محدودیت" value="${(isEdit && task && task.recurrenceCount) ? task.recurrenceCount : ''}">
+            </div>
+          </div>
+        </div>
+        <div class="form-row" id="tf-rec-end-row" style="display:none">
+          <label>تکرار تا تاریخ (اختیاری)</label>
+          <label class="tf-rec-end-toggle"><input type="checkbox" id="tf-rec-end-enable" ${(isEdit && task && task.recurrenceEnd) ? "checked" : ""}> فعال</label>
+          ${(function() {
+            var _lib = window.InternshipLib && window.InternshipLib.date;
+            var _e = (isEdit && task && task.recurrenceEnd && _lib && _lib.parseJalali) ? _lib.parseJalali(task.recurrenceEnd) : null;
+            var _y = (_e && _e.jy) ? _e.jy : init.date.jy;
+            var _m = (_e && _e.jm) ? _e.jm : init.date.jm;
+            var _d = (_e && _e.jd) ? _e.jd : init.date.jd;
+            return datePickerHTML("tf-end", _y, _m, _d);
+          })()}
+        </div>
         ${_taskProjectRowHTML(init.projectId, !!presetProjectId)}
         <div class="form-row" data-preview-for="tf" id="tf-preview"></div>
         <div class="form-row">
@@ -7728,15 +7874,37 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       var _rr=overlay.querySelector(".rec");
       if(!_rr)return;
       var _rh=_rr.querySelector(".rec-h");
+      var _wdRow=overlay.querySelector("#tf-rec-weekdays-row");
+      var _endRow=overlay.querySelector("#tf-rec-end-row");
+      var _optsRow=overlay.querySelector("#tf-rec-opts-row");
+      var _syncVis=function(v){
+        if(_wdRow)_wdRow.style.display=(v==="weekly")?"":"none";
+        if(_endRow)_endRow.style.display=(v==="none")?"none":"";
+        if(_optsRow)_optsRow.style.display=(v==="none")?"none":"";
+      };
+      var _initWd=(isEdit&&task&&Array.isArray(task.recurrenceWeekdays))?task.recurrenceWeekdays:[];
+      overlay.querySelectorAll("[data-tf-wd]").forEach(function(cb){
+        var n=parseInt(cb.getAttribute("data-tf-wd"),10);
+        cb.checked = _initWd.indexOf(n) !== -1;
+        var lab = cb.closest(".tf-wd");
+        if (lab) { if (cb.checked) lab.classList.add("is-on"); else lab.classList.remove("is-on"); }
+        cb.addEventListener("change",function(){ if (lab) lab.classList.toggle("is-on", cb.checked); });
+      });
+      _syncVis((_rh&&_rh.value)||"none");
       _rr.addEventListener("click",function(e){
         var cc=e.target.closest(".rec-chip");
         if(!cc)return;
         if(_rh)_rh.value=cc.getAttribute("data-rec");
         _rr.querySelectorAll(".rec-chip").forEach(function(x){x.classList.remove("is-selected");});
         cc.classList.add("is-selected");
+        _syncVis(cc.getAttribute("data-rec"));
       });
     })();
-    const m = overlay.querySelector("#tf-month");
+    const mEnd = overlay.querySelector("#tf-end-month");
+    const yEnd = overlay.querySelector("#tf-end-year");
+    if (mEnd) mEnd.addEventListener("change", () => refreshDatePicker("tf-end"));
+    if (yEnd) yEnd.addEventListener("change", () => refreshDatePicker("tf-end"));
+        const m = overlay.querySelector("#tf-month");
     const y = overlay.querySelector("#tf-year");
     if (m) m.addEventListener("change", () => refreshDatePicker("tf"));
     if (y) y.addEventListener("change", () => refreshDatePicker("tf"));
@@ -7767,7 +7935,7 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
 
     /* PATCH:mvp03-del-btn3 */
     var _delBtnTf = overlay.querySelector("[data-delete-task]");
-    if (_delBtnTf) _delBtnTf.addEventListener("click", function () { close(); confirmDeleteTask(taskId); });
+    if (_delBtnTf) _delBtnTf.addEventListener("click", function () { close(); confirmDeleteTask(_virtualMatch ? _virtualMatch[0] : taskId); });
     const submit = () => {
       const title = overlay.querySelector("#tf-title").value.trim();
       if (!title) { toast("عنوان را وارد کن", "error"); return; }
@@ -7777,11 +7945,31 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       const durationMinutes = InternshipPickers.duration.read("tf");
       const time = InternshipPickers.time.read("tf") || "";
       const recurrence = (typeof InternshipPickers !== "undefined" && InternshipPickers.recurrence) ? (InternshipPickers.recurrence.read("tf") || "none") : overlay.querySelector("#tf-recur").value;
+
+      var _wdArr = [];
+      overlay.querySelectorAll("[data-tf-wd]").forEach(function(cb){ if (cb.checked) _wdArr.push(parseInt(cb.getAttribute("data-tf-wd"),10)); });
+      _wdArr.sort(function(a,b){return a-b;});
+      var _recurrenceWeekdays = (recurrence === "weekly" && _wdArr.length > 0) ? _wdArr : null;
+
+      var _recIntervalEl = overlay.querySelector("#tf-rec-interval");
+      var _recIntervalRaw = _recIntervalEl ? parseInt(_recIntervalEl.value, 10) : 1;
+      var _recurrenceInterval = (recurrence !== "none" && !isNaN(_recIntervalRaw) && _recIntervalRaw >= 1) ? _recIntervalRaw : null;
+
+      var _recCountEl = overlay.querySelector("#tf-rec-count");
+      var _recCountRaw = _recCountEl ? parseInt(_recCountEl.value, 10) : NaN;
+      var _recurrenceCount = (recurrence !== "none" && !isNaN(_recCountRaw) && _recCountRaw >= 1) ? _recCountRaw : null;
+
+      var _recEndEnableEl = overlay.querySelector("#tf-rec-end-enable");
+      var _recurrenceEnd = null;
+      if (_recEndEnableEl && _recEndEnableEl.checked && recurrence !== "none") {
+        var _endStr = readDatePicker("tf-end");
+        if (_endStr && typeof _endStr === "string") {
+          _recurrenceEnd = _endStr;
+        }
+      }
+
       const description = overlay.querySelector("#tf-desc").value.trim();
 
-      // ─── تعیین taskType ───────────────────────────────
-      //  • اگه بخش رزیدنتی بود: از زیر-dropdown یا تشخیص خودکار
-      //  • وگرنه: مقدار قبلی (edit) یا پیش‌فرض other
       let taskType;
       if (areaId === "residency") {
         const resTypeSel = overlay.querySelector("#tf-res-type");
@@ -7848,7 +8036,7 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
         }
       } catch (e) { console.warn("[27.2 hard-conflict]", e); }
 
-            var _tfProjSel = overlay.querySelector("#tf-project");
+      var _tfProjSel = overlay.querySelector("#tf-project");
       var _tfProjectId;
       if (_tfProjSel && _tfProjSel.value) {
         _tfProjectId = _tfProjSel.value;
@@ -7859,42 +8047,101 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       } else {
         _tfProjectId = null;
       }
-const now = Date.now();
-      if (isEdit) {
-        const _rtWasRel = _rtIsRelevantTask({ time: task.time, durationMinutes: task.durationMinutes, sourceType: task.sourceType, areaId: task.areaId, _sleepAuto: task._sleepAuto });
+
+      const now = Date.now();
+
+      var doSave = function(targetTask, isNewInstance, opts) {
+        opts = opts || {};
+        const _rtWasRel = _rtIsRelevantTask({ time: targetTask.time, durationMinutes: targetTask.durationMinutes, sourceType: targetTask.sourceType, areaId: targetTask.areaId, _sleepAuto: targetTask._sleepAuto });
         const _rtBefore = {
-          title: task.title, date: task.date,
-          time: task.time || null,
-          durationMinutes: (typeof task.durationMinutes === "number" ? task.durationMinutes : null)
+          title: targetTask.title, date: targetTask.date,
+          time: targetTask.time || null,
+          durationMinutes: (typeof targetTask.durationMinutes === "number" ? targetTask.durationMinutes : null)
         };
-        Object.assign(task, {
-          title, areaId, date, time, priority, recurrence, description,
+        Object.assign(targetTask, {
+          title, areaId, date, time, priority, 
+          recurrence: (opts.recurrence !== undefined) ? opts.recurrence : recurrence, 
+          description,
           durationMinutes,
+          recurrenceWeekdays: (opts.recurrenceWeekdays !== undefined) ? opts.recurrenceWeekdays : _recurrenceWeekdays,
+          recurrenceEnd: (opts.recurrenceEnd !== undefined) ? opts.recurrenceEnd : _recurrenceEnd, 
+          recurrenceInterval: (opts.recurrenceInterval !== undefined) ? opts.recurrenceInterval : _recurrenceInterval, 
+          recurrenceCount: (opts.recurrenceCount !== undefined) ? opts.recurrenceCount : _recurrenceCount,
           taskType,
           projectId: _tfProjectId,
           updatedAt: now
         });
-        const _rtIsRel = _rtIsRelevantTask(task);
+        const _rtIsRel = _rtIsRelevantTask(targetTask);
         if (_rtWasRel || _rtIsRel) {
-          _rtNotify("task_updated", {
-            id: task.id, sourceType: "task", date: task.date, title: task.title,
-            before: _rtBefore,
-            after: { title: task.title, date: task.date, time: task.time || null, durationMinutes: (typeof task.durationMinutes === "number" ? task.durationMinutes : null) }
+          _rtNotify(isNewInstance ? "task_added" : "task_updated", {
+            id: targetTask.id, sourceType: "task", date: targetTask.date, title: targetTask.title,
+            before: isNewInstance ? null : _rtBefore,
+            after: { title: targetTask.title, date: targetTask.date, time: targetTask.time || null, durationMinutes: (typeof targetTask.durationMinutes === "number" ? targetTask.durationMinutes : null) }
           });
         }
-        // ─── [PATCH:v4-task-activity-sync] propagate changes to linked activity ───
         try {
-          if (task.sourceType === "residency_activity" && window.InternshipResidency && window.InternshipResidency.taskProjection) {
-            var actId = task.residencyActivityId || task.sourceId;
-            if (actId) window.InternshipResidency.taskProjection.onTaskRescheduled(task.id);
+          if (targetTask.sourceType === "residency_activity" && window.InternshipResidency && window.InternshipResidency.taskProjection) {
+            var actId = targetTask.residencyActivityId || targetTask.sourceId;
+            if (actId) window.InternshipResidency.taskProjection.onTaskRescheduled(targetTask.id);
           }
         } catch (e) { console.warn("[v4 task-resync]", e); }
+      };
+
+      if (isEdit) {
+        if (task.recurrence && task.recurrence !== "none") {
+          var _occDate = _virtualMatch ? _virtualMatch[2] : task.date;
+          _openRecurrenceScopeModal("ویرایش تسک تکرارشونده", function(scope) {
+            if (scope === "cancel") return;
+            
+            if (scope === "this") {
+              if (!task.recurrenceExceptions) task.recurrenceExceptions = {};
+              task.recurrenceExceptions[_occDate] = "skipped";
+              
+              var newT = Object.assign({}, task);
+              newT.id = _mkId("t");
+              newT.date = _occDate;
+              newT.recurrenceExceptions = {};
+              state.tasks.push(newT);
+              
+              doSave(newT, true, {
+                recurrence: "none",
+                recurrenceWeekdays: null,
+                recurrenceEnd: null,
+                recurrenceInterval: null,
+                recurrenceCount: null
+              });
+              
+            } else if (scope === "thisAndNext") {
+              if (_occDate === task.date) {
+                 doSave(task, false);
+              } else {
+                 var _lib = window.InternshipLib.date;
+                 var p = _lib.parseJalali(_occDate);
+                 var prev = _lib.addJalaliDays(p.jy, p.jm, p.jd, -1);
+                 task.recurrenceEnd = _lib.dateKey(prev.jy, prev.jm, prev.jd);
+                 var newT = Object.assign({}, task);
+                 newT.id = _mkId("t");
+                 newT.date = _occDate;
+                 newT.recurrenceExceptions = {};
+                 state.tasks.push(newT);
+                 doSave(newT, true);
+              }
+            } else if (scope === "all") {
+              doSave(task, false);
+            }
+            saveState(); close(); render(); toast("تغییرات اعمال شد");
+          });
+          return;
+        }
+        doSave(task, false);
         toast("کار به‌روزرسانی شد");
       } else {
         const id = _mkId("t");
         const _rtNewTask = {
           id, title, areaId, date, time, priority, recurrence, description,
           durationMinutes,
+          recurrenceWeekdays: _recurrenceWeekdays,
+          recurrenceEnd: _recurrenceEnd, recurrenceInterval: _recurrenceInterval, recurrenceCount: _recurrenceCount,
           completed: false,
           sourceType: "manual",
           sourceId: null,
@@ -7915,12 +8162,9 @@ const now = Date.now();
             after: { title: _rtNewTask.title, date: _rtNewTask.date, time: _rtNewTask.time || null, durationMinutes: (typeof _rtNewTask.durationMinutes === "number" ? _rtNewTask.durationMinutes : null) }
           });
         }
-        toast("کار اضافه شد");
+        saveState(); close(); render(); toast("کار اضافه شد");
       }
-      saveState();
-      close();
-      render();
-    };
+    };;;
 
     overlay.querySelector("[data-confirm]").addEventListener("click", submit);
     overlay.querySelector("#tf-title").addEventListener("keydown", (e) => {
@@ -7928,31 +8172,156 @@ const now = Date.now();
     });
   }
 
-  function confirmDeleteTask(id) {
-    const task = state.tasks.find((t) => t.id === id);
-    if (!task) return;
-    openModal({
-      title: "حذف کار",
-      message: `آیا از حذف «${escapeHTML(task.title)}» مطمئن هستی؟`,
-      confirmText: "حذف",
-      danger: true,
-      onConfirm: () => {
-        var _rtWasRelevant = _rtIsRelevantTask(task);
-        var _rtSnap = {
-          title: task.title, date: task.date,
-          time: task.time || null,
-          durationMinutes: (typeof task.durationMinutes === "number" ? task.durationMinutes : null)
-        };
-        state.tasks = state.tasks.filter((t) => t.id !== id);
-        if (_rtWasRelevant) _rtNotify("task_removed", {
-          id: id, date: task.date, sourceType: "task", title: task.title,
-          before: _rtSnap
-        });
-        saveState();
-        render();
-        toast("کار حذف شد");
+  var _bulkSelected = {};
+  document.body.addEventListener("change", function(e) {
+      if (e.target && e.target.classList.contains("bulk-cb")) {
+          var id = e.target.getAttribute("data-bulk-id");
+          if (e.target.checked) {
+              _bulkSelected[id] = true;
+          } else {
+              delete _bulkSelected[id];
+          }
+          _updateBulkToolbar();
       }
-    });
+  });
+  
+  function _updateBulkToolbar() {
+      var count = Object.keys(_bulkSelected).length;
+      var tb = document.getElementById("bulk-toolbar");
+      if (!tb) {
+          tb = document.createElement("div");
+          tb.id = "bulk-toolbar";
+          tb.className = "bulk-toolbar";
+          tb.innerHTML = '<span id="bulk-count"></span> <button class="btn danger" id="bulk-delete-btn">حذف انتخاب‌شده‌ها</button> <button class="btn ghost" id="bulk-cancel-btn">لغو</button>';
+          document.body.appendChild(tb);
+          document.getElementById("bulk-delete-btn").onclick = _doBulkDelete;
+          document.getElementById("bulk-cancel-btn").onclick = function() {
+              _bulkSelected = {};
+              document.querySelectorAll(".bulk-cb").forEach(function(cb) { cb.checked = false; });
+              _updateBulkToolbar();
+          };
+      }
+      if (count > 0) {
+          tb.classList.add("active");
+          document.getElementById("bulk-count").innerText = count + " مورد انتخاب شده";
+      } else {
+          tb.classList.remove("active");
+      }
+  }
+
+  function _doBulkDelete() {
+      var ids = Object.keys(_bulkSelected);
+      var hasRecurringParents = false;
+      for (var i=0; i<ids.length; i++) {
+          var id = ids[i];
+          var isVirtual = id.indexOf("virtual:") === 0;
+          if (!isVirtual) {
+              var t = state.tasks.find(x => x.id === id);
+              if (t && t.recurrence && t.recurrence !== "none") {
+                  hasRecurringParents = true;
+                  break;
+              }
+          }
+      }
+      var executeDelete = function(scope) {
+          for (var i=0; i<ids.length; i++) {
+              var id = ids[i];
+              var isVirtual = id.indexOf("virtual:") === 0;
+              if (isVirtual) {
+                  var m = /^virtual:([^@]+)@(.+)$/.exec(id);
+                  if (m) {
+                      var p = state.tasks.find(x => x.id === m[1]);
+                      if (p) {
+                          if (!p.recurrenceExceptions) p.recurrenceExceptions = {};
+                          p.recurrenceExceptions[m[2]] = "skipped";
+                      }
+                  }
+              } else {
+                  var t = state.tasks.find(x => x.id === id);
+                  if (t) {
+                      if (t.recurrence && t.recurrence !== "none") {
+                          if (scope === "this") {
+                              if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+                              t.recurrenceExceptions[t.date] = "skipped";
+                          } else if (scope === "thisAndNext") {
+                              var _lib = window.InternshipLib.date;
+                              var p = _lib.parseJalali(t.date);
+                              var prev = _lib.addJalaliDays(p.jy, p.jm, p.jd, -1);
+                              t.recurrenceEnd = _lib.dateKey(prev.jy, prev.jm, prev.jd);
+                          } else if (scope === "all") {
+                              state.tasks = state.tasks.filter(x => x.id !== id);
+                          }
+                      } else {
+                          state.tasks = state.tasks.filter(x => x.id !== id);
+                      }
+                  }
+              }
+          }
+          _bulkSelected = {};
+          document.querySelectorAll(".bulk-cb").forEach(function(cb) { cb.checked = false; });
+          _updateBulkToolbar();
+          saveState(); render(); toast("حذف گروهی انجام شد");
+      };
+      if (hasRecurringParents) {
+          _openRecurrenceScopeModal("حذف تسک‌های انتخاب‌شده", function(scope) {
+              if (scope === "cancel") return;
+              executeDelete(scope);
+          });
+      } else {
+          executeDelete("all");
+      }
+  }
+
+  function confirmDeleteTask(id) {
+    var isVirtual = (typeof id === "string" && id.indexOf("virtual:") === 0);
+    var m = isVirtual ? /^virtual:([^@]+)@(.+)$/.exec(id) : null;
+    var parentId = isVirtual ? m[1] : id;
+    if (typeof parentId === "string" && parentId.indexOf("task:") === 0) parentId = parentId.replace("task:", "");
+    
+    var occDate = isVirtual ? m[2] : null;
+    var task = state.tasks.find(t => t.id === parentId);
+    if (!task) return;
+
+    function _doDelete() {
+      var _rtWasRelevant = _rtIsRelevantTask(task);
+      var _rtSnap = { title: task.title, date: task.date, time: task.time || null, durationMinutes: (typeof task.durationMinutes === "number" ? task.durationMinutes : null) };
+      state.tasks = state.tasks.filter((t) => t.id !== parentId);
+      if (_rtWasRelevant) _rtNotify("task_removed", { id: parentId, date: task.date, sourceType: "task", title: task.title, before: _rtSnap });
+      saveState(); render(); toast("کار حذف شد");
+    }
+
+    if (task.recurrence && task.recurrence !== "none") {
+      _openRecurrenceScopeModal("حذف تسک تکرارشونده", function(scope) {
+        if (scope === "cancel") return;
+        if (scope === "this") {
+          if (!task.recurrenceExceptions) task.recurrenceExceptions = {};
+          task.recurrenceExceptions[occDate || task.date] = "skipped";
+          task.updatedAt = Date.now();
+          saveState(); render(); toast("این وقوع حذف شد");
+          return;
+        }
+        if (scope === "thisAndNext") {
+          if (!occDate || occDate === task.date) {
+             _doDelete();
+             return;
+          }
+          if (!task.recurrenceExceptions) task.recurrenceExceptions = {};
+          task.recurrenceExceptions[occDate] = "skipped";
+          var _lib = window.InternshipLib.date;
+          if (_lib && _lib.parseJalali && _lib.addJalaliDays && _lib.dateKey) {
+            var p = _lib.parseJalali(occDate);
+            var prev = _lib.addJalaliDays(p.jy, p.jm, p.jd, -1);
+            task.recurrenceEnd = _lib.dateKey(prev.jy, prev.jm, prev.jd);
+          }
+          task.updatedAt = Date.now();
+          saveState(); render(); toast("این و وقوع‌های بعدی حذف شدند");
+          return;
+        }
+        if (scope === "all") { _doDelete(); }
+      });
+      return;
+    }
+    _doDelete();
   }
   function resolveResidencyType(task) {
     if (!task) return "study";
@@ -11653,6 +12022,7 @@ ${months.map((m) => `<div class="timeline-month">${JMONTHS[m.jm - 1]}<br><span>$
 
     return `
       <li class="task-row planner-row ${task.completed ? "done" : ""}">
+        <input type="checkbox" class="bulk-cb" data-bulk-id="${task.id}">
         <span class="task-check" data-toggle-task="${task.id}" role="checkbox"
               aria-checked="${task.completed}" tabindex="0" aria-label="${escapeHTML(task.title)}"></span>
         <span class="task-title">${escapeHTML(task.title)}</span>

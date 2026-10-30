@@ -171,6 +171,12 @@
   function _faDigits(s) {
     return String(s).replace(/[0-9]/g, function (d) { return _FA_DIGITS[+d]; });
   }
+  function _amtDigits(s) {
+    return String(s == null ? "" : s)
+      .replace(/[\u06F0-\u06F9]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x06F0 + 48); })
+      .replace(/[\u0660-\u0669]/g, function (d) { return String.fromCharCode(d.charCodeAt(0) - 0x0660 + 48); })
+      .replace(/[^0-9]/g, "");
+  }
   function _fmtToman(n) {
     if (typeof n !== "number" || !isFinite(n)) return "—";
     var neg = n < 0; n = Math.round(Math.abs(n));
@@ -611,7 +617,7 @@
     };
     var q = body.querySelector("[data-fin-qamt]");
     if (q) {
-      q.addEventListener("input", function () { var v = q.value.replace(/[^\d]/g, ""); q.value = v ? _fmtToman(parseInt(v, 10)) : ""; });
+      q.addEventListener("input", function () { var v = _amtDigits(q.value); q.value = v ? _fmtToman(parseInt(v, 10)) : ""; });
       q.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); _quickSubmit(body); } });
     }
   }
@@ -624,7 +630,7 @@
     var amtEl = body.querySelector("[data-fin-qamt]");
     var catEl = body.querySelector("[data-fin-qcat]");
     var noteEl = body.querySelector("[data-fin-qnote]");
-    var raw = String(amtEl.value || "").replace(/[^\d]/g, "");
+    var raw = _amtDigits(amtEl.value);
     var amt = parseInt(raw, 10);
     if (!isFinite(amt) || amt <= 0) { _notify("error", "مبلغ باید عدد صحیح مثبت باشد."); return; }
     var s = _state(); if (!s) return;
@@ -739,7 +745,7 @@
     if (amtEl) {
       try { amtEl.focus(); } catch (e) {}
       amtEl.addEventListener("input", function () {
-        var v = String(amtEl.value || "").replace(/[^\d]/g, "");
+        var v = _amtDigits(amtEl.value);
         amtEl.value = v ? _fmtToman(parseInt(v, 10)) : "";
       });
     }
@@ -938,7 +944,7 @@
     var amtEl = overlay.querySelector('[data-fx="amount"]');
     var noteEl = overlay.querySelector('[data-fx="note"]');
     var err = overlay.querySelector("[data-fx-err]");
-    var raw = String(amtEl.value || "").replace(/[^\d]/g, "");
+    var raw = _amtDigits(amtEl.value);
     var amt = parseInt(raw, 10);
     if (!isFinite(amt) || amt <= 0) { err.textContent = "مبلغ باید عدد صحیح مثبت باشد."; return; }
     if (!_validateDate(overlay.__date)) { err.textContent = "تاریخ نامعتبر."; return; }
@@ -1113,7 +1119,7 @@
     requestAnimationFrame(function () { overlay.classList.add("open"); });
     overlay.querySelectorAll('[data-fb]').forEach(function (inp) {
       inp.addEventListener("input", function () {
-        var v = String(inp.value || "").replace(/[^\d]/g, "");
+        var v = _amtDigits(inp.value);
         inp.value = v ? _fmtToman(parseInt(v, 10)) : "";
       });
     });
@@ -1126,7 +1132,7 @@
       t = e.target.closest("[data-fb-save]");
       if (t) {
         function _read(sel) {
-          var v = String(overlay.querySelector(sel).value || "").replace(/[^\d]/g, "");
+          var v = _amtDigits(overlay.querySelector(sel).value);
           if (v === "") return null;
           var n = parseInt(v, 10);
           return (isFinite(n) && n >= 0) ? n : null;

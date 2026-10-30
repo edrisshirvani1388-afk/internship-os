@@ -32155,3 +32155,209 @@ html body input.r21-manage-settings-input:focus-visible {
   color: rgba(255,255,255,0.75);
 }
 /* [END PATCH:study-together-w17] */
+
+/* [PATCH:phase2-wd] Task form weekdays */
+.tf-weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.tf-wd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, border-color .15s;
+}
+.tf-wd input { accent-color: #3b82f6; margin: 0; }
+.tf-wd:hover { border-color: rgba(59,130,246,.35); }
+.tf-wd.is-on {
+  border-color: rgba(59,130,246,.65);
+  background: rgba(59,130,246,.12);
+}
+/* [PATCH:agent31-phase2.1] weekday toggle + rec-opts + rec-end */
+.tf-wd-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.tf-wd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.tf-wd span { color: rgba(255,255,255,0.85); }
+.tf-wd input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 32px;
+  height: 18px;
+  background: rgba(255,255,255,0.18);
+  border-radius: 9px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  margin: 0;
+  flex-shrink: 0;
+}
+.tf-wd input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+}
+.tf-wd input:checked { background: #4f8fff; }
+.tf-wd input:checked::after { transform: translateX(14px); }
+.tf-wd.is-on {
+  border-color: rgba(79,143,255,0.6);
+  background: rgba(79,143,255,0.1);
+}
+.tf-rec-end-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.7);
+}
+/* [PATCH:agent31-phase2.1-css-fix] */
+.tf-wd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  background: rgba(255,255,255,0.03);
+  transition: all 0.2s ease;
+}
+.tf-wd input[type="checkbox"] {
+  display: none !important;
+}
+.tf-wd-slider {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  background: rgba(255,255,255,0.2);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+.tf-wd-slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.tf-wd input:checked + .tf-wd-slider {
+  background: #4f8fff;
+}
+.tf-wd input:checked + .tf-wd-slider::after {
+  transform: translateX(14px);
+}
+.tf-wd.is-on {
+  border-color: rgba(79,143,255,0.6);
+  background: rgba(79,143,255,0.1);
+}
+.tf-wd-text {
+  color: rgba(255,255,255,0.85);
+}
+/* [PATCH:agent31-phase3] Scope Modal */
+.scope-btn {
+  background: rgba(255,255,255,0.05) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  color: #ddd !important;
+  transition: all 0.2s ease !important;
+}
+.scope-btn:hover {
+  background: rgba(255,255,255,0.1) !important;
+  border-color: rgba(255,255,255,0.2) !important;
+  color: #fff !important;
+}
+/* [PATCH:agent31-phase4] Bulk Delete */
+.bulk-cb {
+    margin-right: 8px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #4f8fff;
+}
+.bulk-toolbar {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e1e1e;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 10px 20px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    z-index: 9999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.bulk-toolbar.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+.bulk-toolbar span {
+    font-size: 14px;
+    color: #fff;
+}
+.bulk-toolbar .btn {
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    border: none;
+    cursor: pointer;
+}
+.bulk-toolbar .btn.danger {
+    background: #ef4444;
+    color: #fff;
+}
+.bulk-toolbar .btn.danger:hover {
+    background: #dc2626;
+}
+.bulk-toolbar .btn.ghost {
+    background: rgba(255,255,255,0.1);
+    color: #ddd;
+}
+.bulk-toolbar .btn.ghost:hover {
+    background: rgba(255,255,255,0.2);
+}

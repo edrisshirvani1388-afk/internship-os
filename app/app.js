@@ -1177,6 +1177,37 @@
     }
     const today = todayJalali();
     const t = parseJalali(today);
+    
+    // Delegated Conflict Toggle
+    if (!window.__conflictDelegationWired) {
+        window.__conflictDelegationWired = true;
+        document.addEventListener('click', function(e) {
+            var banner = e.target.closest('#dash-conflict-host');
+            if (!banner) return;
+            if (e.target.closest('.dash-conflict-row')) return;
+            
+            var list = banner.querySelector('.dash-conflict-list');
+            var chevron = banner.querySelector('.dash-alert-chevron');
+            var sub = banner.querySelector('.dash-alert-sub');
+            var isCollapsed = banner.classList.contains('is-collapsed');
+            
+            if (isCollapsed) {
+                banner.classList.remove('is-collapsed');
+                banner.classList.add('is-expanded');
+                if (list) list.style.display = 'block';
+                if (chevron) chevron.textContent = '▴';
+                if (sub) sub.textContent = 'برای بستن کلیک کن.';
+                window.__dashConflictExpanded = true;
+            } else {
+                banner.classList.remove('is-expanded');
+                banner.classList.add('is-collapsed');
+                if (list) list.style.display = 'none';
+                if (chevron) chevron.textContent = '▾';
+                if (sub) sub.textContent = 'برای مشاهده‌ی جزئیات کلیک کن.';
+                window.__dashConflictExpanded = false;
+            }
+        });
+    }
     const weekday = weekdayName(t.jy, t.jm, t.jd);
     const todayPretty = prettyDate(t.jy, t.jm, t.jd);
 
@@ -1187,9 +1218,73 @@
     const _isToday = _selectedDate === today;
 
     /* PATCH:phase-F7-merge2 — merge sleep split for today card */
-    let todaysTasks = state.tasks
-      .filter((task) => task.date === today && task.cancelled !== true)
-      .filter((task) => !(task._sleepAuto === "night:evening"));
+        let todaysTasks = [];
+    try {
+      var _selDate = _dashSelectedDay || today;
+      var _itemsForList = _getEffectiveItems(_selDate);
+      todaysTasks = _itemsForList.filter(function(it){
+        return it.status !== "cancelled" && it.sourceType !== "shift";
+      }).map(function(it) {
+        if (it.isVirtual) {
+          var parent = state.tasks.find(function(t){ return t.id === it.parentTaskId; });
+          if (!parent) return null;
+          var isSkipped = parent.recurrenceExceptions && parent.recurrenceExceptions[it.occurrenceDate] === "skipped";
+          if (isSkipped) return null;
+          return Object.assign({}, parent, {
+            id: it.id,
+            date: it.occurrenceDate,
+            time: it.startTime || parent.time,
+            durationMinutes: it.durationMinutes || parent.durationMinutes,
+            completed: (it.status === "completed"),
+            _isVirtual: true
+          });
+        } else if (it.sourceType === "task" || it.sourceType === "manual") {
+          var t = state.tasks.find(function(x){ return x.id === it.sourceId; });
+          if (!t) return null;
+          if (t.recurrence && t.recurrence !== "none") {
+            var vId = "virtual:" + t.id + "@" + _selDate;
+            var isComp = (t.recurrenceExceptions && t.recurrenceExceptions[_selDate] === "completed");
+            var isSkip = (t.recurrenceExceptions && t.recurrenceExceptions[_selDate] === "skipped");
+            if (isSkip) return null;
+            return Object.assign({}, t, { id: vId, date: _selDate, completed: isComp, _isVirtual: true });
+          }
+          return Object.assign({}, t, { completed: (it.status === "completed") });
+        } else {
+          return {
+            id: it.id,
+            title: it.title,
+            areaId: it.sourceType === "shift" ? "shift" : "residency",
+            completed: (it.status === "completed"),
+            date: _selDate,
+            time: it.startTime,
+            durationMinutes: it.durationMinutes,
+            _isActivity: true,
+            sourceType: it.sourceType
+          };
+        }
+      }).filter(Boolean);
+
+      // Merge untimed raw tasks for _selDate
+      var _rawSel = state.tasks.filter(function(task){ return task.date === _selDate && task.cancelled !== true && !task.time; });
+      _rawSel.forEach(function(rt) {
+        if (!todaysTasks.find(function(x){ return x.id === rt.id || (x._isVirtual && x.id.indexOf(rt.id) > -1); })) {
+          if (rt.recurrence && rt.recurrence !== "none") {
+            var vId = "virtual:" + rt.id + "@" + _selDate;
+            var isComp = (rt.recurrenceExceptions && rt.recurrenceExceptions[_selDate] === "completed");
+            var isSkip = (rt.recurrenceExceptions && rt.recurrenceExceptions[_selDate] === "skipped");
+            if (!isSkip) {
+              todaysTasks.push(Object.assign({}, rt, { id: vId, date: _selDate, completed: isComp, _isVirtual: true }));
+            }
+          } else {
+            todaysTasks.push(rt);
+          }
+        }
+      });
+    } catch(e) { console.warn("[dash-today-proj]", e); }
+
+    todaysTasks = todaysTasks.filter(function(task) {
+      return !(task._sleepAuto === "night:evening");
+    });
     todaysTasks = todaysTasks.map((task) => {
       if (task._sleepAuto === "night:morning" && state.sleep && state.sleep.schedule && state.sleep.schedule.night) {
         const nb = state.sleep.schedule.night.bedTime || "22:00";
@@ -1728,7 +1823,7 @@
         var key = btn.getAttribute("data-dash-day");
         if (!key) return;
         _dashSelectedDay = key;
-        _dashRenderSelectedDate(key);
+        render(); // به جای رندر بخشی، کل داشبورد را رفرش می‌کنیم
       });
     });
 
@@ -2146,6 +2241,8 @@ function _dashRenderSelectedDate(dateKeyStr) {
       return;
     }
 
+    const wasCompleted = t.completed;
+    t.completed = !t.completed && !t.cancelled;
     t.updatedAt = Date.now();
     if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
     try {
@@ -2282,32 +2379,7 @@ function _dashRenderSelectedDate(dateKeyStr) {
   }
 
   function _wireDashConflictToggle() {
-    var el = document.getElementById("dash-conflict-host");
-    if (!el) return;
-    if (el.__wiredToggle) return;
-    el.__wiredToggle = true;
-    el.addEventListener("click", function (ev) {
-      if (ev.target.closest && ev.target.closest(".dash-conflict-row")) return;
-      window.__dashConflictExpanded = !window.__dashConflictExpanded;
-      var R = window.InternshipResidency;
-      var items = [];
-      var cur = _dashSelectedDay || todayJalali();
-      try {
-        if (R && R.schedulingProjection && R.schedulingProjection.projectDate) {
-          items = _getEffectiveItems(cur);
-        }
-      } catch (e) {}
-      var conf = [];
-      try {
-        if (R && R.schedulingConflict && R.schedulingConflict.detect && items.length > 1) {
-          conf = (R.schedulingConflict.detect(items, {}) || []).filter(function (c) {
-            return c && (c.policy === "HARD" || c.policy === "WARNING");
-          });
-        }
-      } catch (e) {}
-      el.outerHTML = _renderDashConflictBanner(conf, items);
-      setTimeout(_wireDashConflictToggle, 20);
-    });
+    // Disabled: Now using event delegation in renderDashboard
   }
   function _renderDashReplanBanner() {
     try {
@@ -2352,38 +2424,34 @@ function _dashRenderSelectedDate(dateKeyStr) {
       title = faNum(warnCount) + " هشدار تداخل زمانی";
     }
 
-    var subtitle = expanded
-      ? "برای بستن کلیک کن."
-      : "برای مشاهده‌ی جزئیات کلیک کن.";
+    var subtitle = expanded ? "برای بستن کلیک کن." : "برای مشاهده‌ی جزئیات کلیک کن.";
 
     var idMap = {};
     (items || []).forEach(function (it) { if (it && it.id) idMap[it.id] = it; });
 
-    var detailHTML = "";
-    if (expanded) {
-      var rows = conflicts.slice(0, 10).map(function (c) {
-        var a = idMap[c.itemAId] || {};
-        var b = idMap[c.itemBId] || {};
-        var aTitle = a.title || "—";
-        var bTitle = b.title || "—";
-        var range = (c.overlapStart && c.overlapEnd)
-          ? (faNum(c.overlapStart) + " تا " + faNum(c.overlapEnd))
-          : "";
-        var policyLabel = c.policy === "HARD" ? "تداخل جدی" : "تداخل قابل قبول";
-        return '<div class="dash-conflict-row">'
-          + '<span class="dash-conflict-icon">' + (c.policy === "HARD" ? "⛔" : "⚠️") + '</span>'
-          + '<div class="dash-conflict-text">'
-          +   '<div class="dash-conflict-titles">' + escapeHTML(aTitle) + ' ↔ ' + escapeHTML(bTitle) + '</div>'
-          +   '<div class="dash-conflict-meta">' + policyLabel + (range ? ' · ' + range : '') + '</div>'
-          + '</div>'
-        + '</div>';
-      }).join("");
-      var moreCount = Math.max(0, conflicts.length - 10);
-      var moreRow = moreCount > 0
-        ? '<div class="dash-conflict-more">و ' + faNum(moreCount) + ' تداخل دیگر</div>'
+    var rows = conflicts.slice(0, 10).map(function (c) {
+      var a = idMap[c.itemAId] || {};
+      var b = idMap[c.itemBId] || {};
+      var aTitle = a.title || "—";
+      var bTitle = b.title || "—";
+      var range = (c.overlapStart && c.overlapEnd)
+        ? (faNum(c.overlapStart) + " تا " + faNum(c.overlapEnd))
         : "";
-      detailHTML = '<div class="dash-conflict-list">' + rows + moreRow + '</div>';
-    }
+      var policyLabel = c.policy === "HARD" ? "تداخل جدی" : "تداخل قابل قبول";
+      return '<div class="dash-conflict-row">'
+        + '<span class="dash-conflict-icon">' + (c.policy === "HARD" ? "⛔" : "⚠️") + '</span>'
+        + '<div class="dash-conflict-text">'
+        +   '<div class="dash-conflict-titles">' + escapeHTML(aTitle) + ' ↔ ' + escapeHTML(bTitle) + '</div>'
+        +   '<div class="dash-conflict-meta">' + policyLabel + (range ? ' · ' + range : '') + '</div>'
+        + '</div>'
+      + '</div>';
+    }).join("");
+    var moreCount = Math.max(0, conflicts.length - 10);
+    var moreRow = moreCount > 0
+      ? '<div class="dash-conflict-more">و ' + faNum(moreCount) + ' تداخل دیگر</div>'
+      : "";
+
+    var detailHTML = '<div class="dash-conflict-list" style="display: ' + (expanded ? 'block' : 'none') + ';">' + rows + moreRow + '</div>';
 
     return '<div class="' + cls + (expanded ? ' is-expanded' : ' is-collapsed') + '" id="dash-conflict-host" data-dash-conflict-toggle>'
       + '<div class="dash-alert-head">'
@@ -3874,6 +3942,22 @@ function _dashWeekLabel() {
   }
 
   function toggleTask(id) {
+    if (typeof id === "string" && id.indexOf("shift:") === 0) {
+      var sId = id.replace("shift:", "");
+      var sh = state.shifts.find(function(s){ return s.id === sId; });
+      if (sh) {
+        sh.completed = !sh.completed;
+        sh.updatedAt = Date.now();
+        saveState(); render();
+      }
+      return;
+    }
+    if (typeof id === "string" && id.indexOf("task:") === 0) {
+      id = id.replace("task:", "");
+    }
+    if (typeof id === "string" && id.indexOf("virtual:") === 0) { return _toggleVirtualOccurrence(id); }
+    const t = state.tasks.find((x) => x.id === id);
+    if (!t) return;
     if (t.recurrence && t.recurrence !== "none" && !t.completed) {
       _openRecurrenceScopeModal("تسک تکرارشونده: کدام وقوع تیک بخورد؟", function(scope) {
         if (scope === "cancel") return;
@@ -3907,6 +3991,8 @@ function _dashWeekLabel() {
       return;
     }
 
+    const wasCompleted = t.completed;
+    t.completed = !t.completed && !t.cancelled;
     t.updatedAt = Date.now();
     if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
     // ─── [PATCH:v4-task-activity-sync] propagate completion to residency activity ───
@@ -7150,6 +7236,37 @@ function contentRefId(areaId, sourceType, sourceId) {
   function renderPlanner() {
     const today = todayJalali();
     const t = parseJalali(today);
+    
+    // Delegated Conflict Toggle
+    if (!window.__conflictDelegationWired) {
+        window.__conflictDelegationWired = true;
+        document.addEventListener('click', function(e) {
+            var banner = e.target.closest('#dash-conflict-host');
+            if (!banner) return;
+            if (e.target.closest('.dash-conflict-row')) return;
+            
+            var list = banner.querySelector('.dash-conflict-list');
+            var chevron = banner.querySelector('.dash-alert-chevron');
+            var sub = banner.querySelector('.dash-alert-sub');
+            var isCollapsed = banner.classList.contains('is-collapsed');
+            
+            if (isCollapsed) {
+                banner.classList.remove('is-collapsed');
+                banner.classList.add('is-expanded');
+                if (list) list.style.display = 'block';
+                if (chevron) chevron.textContent = '▴';
+                if (sub) sub.textContent = 'برای بستن کلیک کن.';
+                window.__dashConflictExpanded = true;
+            } else {
+                banner.classList.remove('is-expanded');
+                banner.classList.add('is-collapsed');
+                if (list) list.style.display = 'none';
+                if (chevron) chevron.textContent = '▾';
+                if (sub) sub.textContent = 'برای مشاهده‌ی جزئیات کلیک کن.';
+                window.__dashConflictExpanded = false;
+            }
+        });
+    }
     const tomorrow = addJalaliDays(t.jy, t.jm, t.jd, 1);
     const in7 = addJalaliDays(t.jy, t.jm, t.jd, 7);
     const in7Key = dateKey(in7.jy, in7.jm, in7.jd);
@@ -7836,22 +7953,29 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
               <input type="number" id="tf-rec-interval" min="1" max="52" step="1" value="${(isEdit && task && task.recurrenceInterval) ? task.recurrenceInterval : 1}">
             </div>
             <div class="form-row">
-              <label for="tf-rec-count">تعداد تکرار</label>
-              <input type="number" id="tf-rec-count" min="0" max="500" step="1" placeholder="بدون محدودیت" value="${(isEdit && task && task.recurrenceCount) ? task.recurrenceCount : ''}">
+              <label for="tf-rec-end-type">پایان تکرار</label>
+              <select id="tf-rec-end-type">
+                <option value="never" ${(!(isEdit && task && (task.recurrenceEnd || task.recurrenceCount))) ? "selected" : ""}>هرگز</option>
+                <option value="on" ${(isEdit && task && task.recurrenceEnd) ? "selected" : ""}>در تاریخ مشخص</option>
+                <option value="after" ${(isEdit && task && task.recurrenceCount) ? "selected" : ""}>بعد از تعداد مشخص</option>
+              </select>
             </div>
           </div>
-        </div>
-        <div class="form-row" id="tf-rec-end-row" style="display:none">
-          <label>تکرار تا تاریخ (اختیاری)</label>
-          <label class="tf-rec-end-toggle"><input type="checkbox" id="tf-rec-end-enable" ${(isEdit && task && task.recurrenceEnd) ? "checked" : ""}> فعال</label>
-          ${(function() {
-            var _lib = window.InternshipLib && window.InternshipLib.date;
-            var _e = (isEdit && task && task.recurrenceEnd && _lib && _lib.parseJalali) ? _lib.parseJalali(task.recurrenceEnd) : null;
-            var _y = (_e && _e.jy) ? _e.jy : init.date.jy;
-            var _m = (_e && _e.jm) ? _e.jm : init.date.jm;
-            var _d = (_e && _e.jd) ? _e.jd : init.date.jd;
-            return datePickerHTML("tf-end", _y, _m, _d);
-          })()}
+          <div class="form-row" id="tf-rec-end-on-row" style="display:none; margin-top:10px;">
+            ${(function() {
+              var _lib = window.InternshipLib && window.InternshipLib.date;
+              var _e = (isEdit && task && task.recurrenceEnd && _lib && _lib.parseJalali) ? _lib.parseJalali(task.recurrenceEnd) : null;
+              var _y = (_e && _e.jy) ? _e.jy : init.date.jy;
+              var _m = (_e && _e.jm) ? _e.jm : init.date.jm;
+              var _d = (_e && _e.jd) ? _e.jd : init.date.jd;
+              return datePickerHTML("tf-end", _y, _m, _d);
+            })()}
+          </div>
+          <div class="form-row" id="tf-rec-end-after-row" style="display:none; margin-top:10px;">
+            <label for="tf-rec-count">بعد از</label>
+            <input type="number" id="tf-rec-count" min="1" max="500" step="1" placeholder="مثلاً ۵" value="${(isEdit && task && task.recurrenceCount) ? task.recurrenceCount : ''}">
+            <span style="font-size:13px; color:#aaa;">بار</span>
+          </div>
         </div>
         ${_taskProjectRowHTML(init.projectId, !!presetProjectId)}
         <div class="form-row" data-preview-for="tf" id="tf-preview"></div>
@@ -7875,13 +7999,24 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       if(!_rr)return;
       var _rh=_rr.querySelector(".rec-h");
       var _wdRow=overlay.querySelector("#tf-rec-weekdays-row");
-      var _endRow=overlay.querySelector("#tf-rec-end-row");
       var _optsRow=overlay.querySelector("#tf-rec-opts-row");
+      var _endOnRow=overlay.querySelector("#tf-rec-end-on-row");
+      var _endAfterRow=overlay.querySelector("#tf-rec-end-after-row");
+      var _endTypeSel=overlay.querySelector("#tf-rec-end-type");
+
       var _syncVis=function(v){
-        if(_wdRow)_wdRow.style.display=(v==="weekly")?"":"none";
-        if(_endRow)_endRow.style.display=(v==="none")?"none":"";
-        if(_optsRow)_optsRow.style.display=(v==="none")?"none":"";
+        if(_wdRow) _wdRow.style.display=(v==="weekly")?"":"none";
+        if(_optsRow) _optsRow.style.display=(v==="none")?"none":"";
+        if(v !== "none" && _endTypeSel) {
+          var et = _endTypeSel.value;
+          if(_endOnRow) _endOnRow.style.display=(et==="on")?"":"none";
+          if(_endAfterRow) _endAfterRow.style.display=(et==="after")?"":"none";
+        } else {
+          if(_endOnRow) _endOnRow.style.display="none";
+          if(_endAfterRow) _endAfterRow.style.display="none";
+        }
       };
+
       var _initWd=(isEdit&&task&&Array.isArray(task.recurrenceWeekdays))?task.recurrenceWeekdays:[];
       overlay.querySelectorAll("[data-tf-wd]").forEach(function(cb){
         var n=parseInt(cb.getAttribute("data-tf-wd"),10);
@@ -7890,6 +8025,11 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
         if (lab) { if (cb.checked) lab.classList.add("is-on"); else lab.classList.remove("is-on"); }
         cb.addEventListener("change",function(){ if (lab) lab.classList.toggle("is-on", cb.checked); });
       });
+      
+      if (_endTypeSel) {
+        _endTypeSel.addEventListener("change", function(){ _syncVis((_rh&&_rh.value)||"none"); });
+      }
+
       _syncVis((_rh&&_rh.value)||"none");
       _rr.addEventListener("click",function(e){
         var cc=e.target.closest(".rec-chip");
@@ -7900,11 +8040,7 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
         _syncVis(cc.getAttribute("data-rec"));
       });
     })();
-    const mEnd = overlay.querySelector("#tf-end-month");
-    const yEnd = overlay.querySelector("#tf-end-year");
-    if (mEnd) mEnd.addEventListener("change", () => refreshDatePicker("tf-end"));
-    if (yEnd) yEnd.addEventListener("change", () => refreshDatePicker("tf-end"));
-        const m = overlay.querySelector("#tf-month");
+    const m = overlay.querySelector("#tf-month");
     const y = overlay.querySelector("#tf-year");
     if (m) m.addEventListener("change", () => refreshDatePicker("tf"));
     if (y) y.addEventListener("change", () => refreshDatePicker("tf"));
@@ -7941,7 +8077,8 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       if (!title) { toast("عنوان را وارد کن", "error"); return; }
       const areaId = overlay.querySelector("#tf-area").value;
       const priority = overlay.querySelector("#tf-priority").value;
-      const date = readDatePicker("tf");
+      const dateObj = readDatePicker("tf");
+      const date = (typeof dateObj === "string") ? dateObj : (dateObj.jy + "/" + dateObj.jm + "/" + dateObj.jd);
       const durationMinutes = InternshipPickers.duration.read("tf");
       const time = InternshipPickers.time.read("tf") || "";
       const recurrence = (typeof InternshipPickers !== "undefined" && InternshipPickers.recurrence) ? (InternshipPickers.recurrence.read("tf") || "none") : overlay.querySelector("#tf-recur").value;
@@ -7955,20 +8092,31 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
       var _recIntervalRaw = _recIntervalEl ? parseInt(_recIntervalEl.value, 10) : 1;
       var _recurrenceInterval = (recurrence !== "none" && !isNaN(_recIntervalRaw) && _recIntervalRaw >= 1) ? _recIntervalRaw : null;
 
-      var _recCountEl = overlay.querySelector("#tf-rec-count");
-      var _recCountRaw = _recCountEl ? parseInt(_recCountEl.value, 10) : NaN;
-      var _recurrenceCount = (recurrence !== "none" && !isNaN(_recCountRaw) && _recCountRaw >= 1) ? _recCountRaw : null;
-
-      var _recEndEnableEl = overlay.querySelector("#tf-rec-end-enable");
+      var _recEndTypeEl = overlay.querySelector("#tf-rec-end-type");
+      var _recEndType = _recEndTypeEl ? _recEndTypeEl.value : "never";
       var _recurrenceEnd = null;
-      if (_recEndEnableEl && _recEndEnableEl.checked && recurrence !== "none") {
-        var _endStr = readDatePicker("tf-end");
-        if (_endStr && typeof _endStr === "string") {
-          _recurrenceEnd = _endStr;
+      var _recurrenceCount = null;
+
+      if (recurrence !== "none") {
+        if (_recEndType === "on") {
+          var _endObj = readDatePicker("tf-end");
+          if (_endObj) {
+            if (typeof _endObj === "string") _recurrenceEnd = _endObj;
+            else if (_endObj.jy) _recurrenceEnd = _endObj.jy + "/" + _endObj.jm + "/" + _endObj.jd;
+          }
+        } else if (_recEndType === "after") {
+          var _recCountEl = overlay.querySelector("#tf-rec-count");
+          var _recCountRaw = _recCountEl ? parseInt(_recCountEl.value, 10) : NaN;
+          _recurrenceCount = (!isNaN(_recCountRaw) && _recCountRaw >= 1) ? _recCountRaw : null;
         }
       }
 
       const description = overlay.querySelector("#tf-desc").value.trim();
+
+      let _catHint = null;
+      if (title && title.indexOf("بیمارستان") >= 0) { _catHint = "hospital"; }
+      else if (presetAreaId === "hospital") { _catHint = "hospital"; }
+      else if (isEdit && task._catHint) { _catHint = task._catHint; }
 
       let taskType;
       if (areaId === "residency") {
@@ -8068,6 +8216,7 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
           recurrenceInterval: (opts.recurrenceInterval !== undefined) ? opts.recurrenceInterval : _recurrenceInterval, 
           recurrenceCount: (opts.recurrenceCount !== undefined) ? opts.recurrenceCount : _recurrenceCount,
           taskType,
+          _catHint: _catHint,
           projectId: _tfProjectId,
           updatedAt: now
         });
@@ -8146,6 +8295,7 @@ function openTaskForm(taskId, presetDate, presetAreaId, presetProjectId) {
           sourceType: "manual",
           sourceId: null,
           taskType,
+          _catHint: _catHint,
           projectId: _tfProjectId || null,
           createdAt: now,
           updatedAt: now

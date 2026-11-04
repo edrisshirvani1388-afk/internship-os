@@ -1380,7 +1380,7 @@
       var _todayDone = state.tasks.filter(function (x) { return x.date === today && x.completed && !x.cancelled; }).length;
       var _todayPend = _todayTotal - _todayDone;
       var _overdueCount = state.tasks.filter(function (x) {
-        return !x.completed && !x.cancelled && x.date && x.date < today;
+        return !x.completed && !x.cancelled && x.date && window.InternshipLib.date.compareJalaliDate(x.date, today) < 0;
       }).length;
 
       var _calToday = 0, _calTarget = 0;
@@ -1459,7 +1459,7 @@
           var _tk = null;
           for (var _ti = 0; _ti < state.tasks.length; _ti++) { if (state.tasks[_ti].id === _it.taskId) { _tk = state.tasks[_ti]; break; } }
           if (!_tk || !_tk.date || _tk.completed) continue;
-          if (_tk.date < today) continue;
+          if (window.InternshipLib.date.compareJalaliDate(_tk.date, today) < 0) continue;
           var _tp = parseJalali(_tk.date);
           if (!_tp) continue;
           var _dn = jalaliToDayNumber(_tp.jy, _tp.jm, _tp.jd) - todayDayN;
@@ -4218,7 +4218,7 @@ function _projectsEnsure(s) {
     return true;
   }
   function _healthSortDesc(arr) {
-    return arr.slice().sort(function (a, b) { return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0); });
+    return arr.slice().sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(b, a); });
   }
   function _healthLastBody() {
     var h = _healthEnsure(state); if (!h || !h.bodyLog.length) return null;
@@ -4733,7 +4733,7 @@ function _renderBodyTab() { /* PATCH:phase-F6-bodyUI */
     var logs = (h.bodyLog || []).filter(function (x) { return x.weightKg; });
     if (logs.length === 0) return '<div class="body-empty"><span class="body-empty-ic">📉</span><div>داده‌ای برای نمودار وجود ندارد</div></div>';
     if (logs.length === 1) return '<div class="body-empty"><span class="body-empty-ic">📊</span><div>برای رسم روند، حداقل دو اندازه‌گیری لازم است</div></div>';
-    logs.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    logs.sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(a, b); });
     var W = 640, H = 200, P = 28;
     var minV = logs[0].weightKg, maxV = logs[0].weightKg;
     logs.forEach(function (l) { if (l.weightKg < minV) minV = l.weightKg; if (l.weightKg > maxV) maxV = l.weightKg; });
@@ -5861,7 +5861,7 @@ function _dayTotals(s, date) {
       if (t.areaId !== "food") return false;
       var rec = t.recurrence || "none";
       if (rec === "none") return t.date === today;
-      if (t.date > today) return false;
+      if (window.InternshipLib.date.compareJalaliDate(t.date, today) > 0) return false;
       if (rec === "daily") return true;
       var st = parseJalali(t.date), td = parseJalali(today);
       if (!st || !td) return false;
@@ -5912,11 +5912,11 @@ function _dashNotificationsList() {
     try {
       var today = todayJalali();
       var od = (state.tasks || []).filter(function (t) { /* PATCH:phase-F7-arrow2 */
-        if (!t || t.completed || t.cancelled === true || !t.date || t.date >= today) return false;
+        if (!t || t.completed || t.cancelled === true || !t.date || window.InternshipLib.date.compareJalaliDate(t.date, today) >= 0) return false;
         if (t._sleepAuto) return false;
         return true;
       });
-      od.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      od.sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(a, b); });
       /* PATCH:phase-F6-b5 bell-workout */
       try {
         var nowD = new Date();

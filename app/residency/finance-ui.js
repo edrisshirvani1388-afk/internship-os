@@ -487,7 +487,7 @@
     list = list.slice();
     /* newest first */
     list.sort(function (a, b) {
-      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      if (a.date !== b.date) return window.InternshipLib.date.compareJalaliDate(b, a);
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
     return list;

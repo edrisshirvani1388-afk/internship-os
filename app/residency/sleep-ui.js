@@ -49,7 +49,7 @@
     return s;  /* PATCH:phase-F7-fix2 */
   }
   function _newId(){ return "sl-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,6); }
-  function _sortDesc(a){ return a.slice().sort(function(x,y){ return x.date<y.date?1:(x.date>y.date?-1:0); }); }
+  function _sortDesc(a){ return a.slice().sort(function(x,y){ return window.InternshipLib.date.compareJalaliDate(y.date, x.date); }); }
 
   function _toMin(t){
     if (!t || typeof t !== "string") return null;
@@ -489,7 +489,7 @@
   function _renderHistory() { /* PATCH:phase-F7-final */
     var s = _ensure(state());
     var all = (s.sleep.log || []).slice().sort(function(a,b){
-      return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0);
+      return window.InternshipLib.date.compareJalaliDate(b, a);
     });
     var out = "";
     if (!all.length) {

@@ -1094,8 +1094,8 @@
     });
   }
   function _saveHistory(form) {
-    var sVal = form.querySelector
-    if (!_requireOnline()) return;('[name="started_at"]').value;
+    if (!_requireOnline()) return;
+    var sVal = form.querySelector('[name="started_at"]').value;
     var eVal = form.querySelector('[name="ended_at"]').value;
     var rVal = form.querySelector('[name="end_reason"]').value;
     var sIso = _localInputToIso(sVal);
@@ -1461,8 +1461,8 @@
     render();
   }
   function _applyBulkCourse() {
-    var ids = Object.keys
-    if (!_requireOnline()) return;(S.histSelected || {}).filter(function (k) { return S.histSelected[k]; });
+    if (!_requireOnline()) return;
+    var ids = Object.keys(S.histSelected || {}).filter(function (k) { return S.histSelected[k]; });
     if (ids.length === 0) { S.historyError = "\u0647\u06CC\u0686 \u062C\u0644\u0633\u0647\u200C\u0627\u06CC \u0627\u0646\u062A\u062E\u0627\u0628 \u0646\u0634\u062F\u0647"; render(); return; }
     var cid = S.histBulkCourse;
     if (!cid) { S.historyError = "\u06CC\u06A9 \u062F\u0631\u0633 \u0627\u0646\u062A\u062E\u0627\u0628 \u06A9\u0646\u06CC\u062F"; render(); return; }
@@ -3977,8 +3977,8 @@
     return '<div class="st-chart-card"><div class="st-members-title">\uD83C\uDFAF \u067E\u06CC\u0634\u0631\u0641\u062A \u0647\u062F\u0641</div>' + rows + '</div>';
   }
   function _saveGlobalGoal() {
-    var dEl = S.container.querySelector
-    if (!_requireOnline()) return;('[data-goal-global-daily]');
+    if (!_requireOnline()) return;
+    var dEl = S.container.querySelector('[data-goal-global-daily]');
     var wEl = S.container.querySelector('[data-goal-global-weekly]');
     var daily = (dEl && String(dEl.value || "").trim()) ? parseInt(dEl.value, 10) : null;
     var weekly = (wEl && String(wEl.value || "").trim()) ? parseInt(wEl.value, 10) : null;
@@ -3999,8 +3999,8 @@
       .catch(function (err) { S.goalsBusy = false; S.goalsError = String(err && err.message || err); render(); });
   }
   function _saveCourseGoal(cid) {
-    var dEl = S.container.querySelector
-    if (!_requireOnline()) return;('[data-goal-course-daily="' + cid + '"]');
+    if (!_requireOnline()) return;
+    var dEl = S.container.querySelector('[data-goal-course-daily="' + cid + '"]');
     var wEl = S.container.querySelector('[data-goal-course-weekly="' + cid + '"]');
     var daily = (dEl && String(dEl.value || "").trim()) ? parseInt(dEl.value, 10) : null;
     var weekly = (wEl && String(wEl.value || "").trim()) ? parseInt(wEl.value, 10) : null;

@@ -1,7 +1,11 @@
 {
-  "schema": 22,
-  "releasedAt": "2026-10-31",
-  "version": "1.0.2",
-  "highlights": "Fix: Finance Persian digits, Hospital color, Sleep toggle, Conflict UI. Feature: Recurrence scope modal, Toggle UI, Date picker, Interval/Count, Bulk delete.",
-  "notes": "v1.0.2"
+    "highlights":  [
+                       "Correct Jalali-date comparisons and chronological sorting across dashboard, finance, and sleep history.",
+                       "Fix Study Together manual session saving, global daily/weekly goals, course goals, and bulk course assignment.",
+                       "Schema v22 retained; no database migration."
+                   ],
+    "schema":  22,
+    "version":  "1.0.3",
+    "releasedAt":  "2026-11-05",
+    "notes":  "v1.0.3"
 }

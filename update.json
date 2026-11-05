@@ -1,9 +1,9 @@
 {
-  "sha256": "612CC522FFCF6092D71B36CF06B72F0C7D22A8C2DC3BF9DC2C781D599E82BDC6",
-  "installerUrl": "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.2/InternshipOS-Setup-v1.0.2.exe",
-  "publishedAt": "2026-10-31",
-  "releaseNotes": "Fix: Finance Persian digits, Hospital color, Sleep toggle, Conflict UI. Feature: Recurrence scope modal, Toggle UI, Date picker, Interval/Count, Bulk delete.",
-  "sizeBytes": 58897050,
-  "latest": "1.0.2",
-  "zipUrl": "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.2/InternshipOS-Setup-v1.0.2.exe"
+    "publishedAt":  "2026-11-05",
+    "releaseNotes":  "Correct Jalali-date comparisons and chronological sorting across dashboard, finance, and sleep history.\nFix Study Together manual session saving, global daily/weekly goals, course goals, and bulk course assignment.\nSchema v22 retained; no database migration.",
+    "zipUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.3/InternshipOS-Setup-v1.0.3.exe",
+    "sha256":  "ED1A0B41C21D69B006068D872EA7577046170A6311DA5513F7BA576509E5BD20",
+    "sizeBytes":  58887470,
+    "latest":  "1.0.3",
+    "installerUrl":  "https://github.com/edrisshirvani1388-afk/internship-os/releases/download/v1.0.3/InternshipOS-Setup-v1.0.3.exe"
 }

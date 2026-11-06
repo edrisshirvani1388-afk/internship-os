@@ -377,7 +377,7 @@
 
   const JMONTHS   = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
   const JWEEKDAYS = ["شنبه","یک‌شنبه","دوشنبه","سه‌شنبه","چهارشنبه","پنج‌شنبه","جمعه"];
-  const ROUTES = ["dashboard","calendar","planner","clinical","study","residency","progress","data","help"];
+  const ROUTES = ["dashboard","calendar","clinical","study","residency","progress","data","help"];
 
   /* ─── Jalali calendar ──────────────────────────────────── */
 
@@ -1077,10 +1077,12 @@
 
   function setRoute(r, param) {
     let actualRoute = r;
+    if (actualRoute === "planner") { actualRoute = "calendar"; _pendingCalView = "list"; param = undefined; }
     if (typeof r === "string" && r.indexOf(":") !== -1) {
       const parts = r.split(":");
       actualRoute = parts[0];
       param = parts[1];
+      if (actualRoute === "planner") { actualRoute = "calendar"; _pendingCalView = "list"; param = undefined; }
     }
 
     // ─── Coming Soon: پاپ‌آپ به‌جای رفتن به صفحه ───
@@ -1090,7 +1092,7 @@
       return;
     }
 
-    const MAIN_ROUTES = ["dashboard","calendar","planner","clinical","study","emergency","procedures","residency","study-together","progress","data","help"];
+    const MAIN_ROUTES = ["dashboard","calendar","clinical","study","emergency","procedures","residency","study-together","progress","data","help"];
     const isAreaId = LIFE_AREAS.some((a) => a.id === actualRoute);
     if (isAreaId && MAIN_ROUTES.indexOf(actualRoute) === -1) {
       param = actualRoute;
@@ -1102,7 +1104,16 @@
     const validRoutes = MAIN_ROUTES.concat(["area-detail"]);
     if (validRoutes.indexOf(actualRoute) === -1) actualRoute = "dashboard";
 
+    const _ioPrevRoute = route;
     route = actualRoute;
+    if (_ioPrevRoute === "study-together" && actualRoute !== "study-together") {
+      try {
+        if (window.InternshipResidency && window.InternshipResidency.studyTogether &&
+            typeof window.InternshipResidency.studyTogether.detachView === "function") {
+          window.InternshipResidency.studyTogether.detachView();
+        }
+      } catch (e) {}
+    }
     if (location.hash !== "#/" + actualRoute) history.replaceState(null, "", "#/" + actualRoute);
     document.querySelectorAll(".nav-item").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.route === actualRoute);
@@ -1718,7 +1729,6 @@
       <section class="dash-tasks-card" id="dash-tasks-card">
         <div class="dash-tasks-head">
           <span class="dash-tasks-title">✅ کارهای امروز</span>
-          <button class="btn ghost small" id="btn-open-planner" type="button">برنامه‌ریزی ←</button>
         </div>
         <ul class="today-tasks">
           ${todaysTasks.length
@@ -1865,7 +1875,7 @@
 
     // ─── Other wire ───
     const plannerBtn = document.getElementById("btn-open-planner");
-    if (plannerBtn) plannerBtn.addEventListener("click", () => setRoute("planner"));
+    if (plannerBtn) plannerBtn.addEventListener("click", () => { _pendingCalView = "list"; setRoute("calendar"); });
 
     view.querySelectorAll("[data-nav]").forEach((el) => {
       el.addEventListener("click", () => setRoute(el.dataset.nav));
@@ -4029,7 +4039,7 @@ function _dashWeekLabel() {
     render();
 
     // ─── اگه تسک تازه «انجام شد» و کاربر توی داشبورد یا برنامه‌ریزیه، پیام رو عوض کن ───
-    if (!wasCompleted && t.completed && (route === "dashboard" || route === "planner")) {
+    if (!wasCompleted && t.completed && (route === "dashboard" || route === "planner" || route === "calendar")) {
       // تأخیر کوچیک تا انیمیشن تیک تسک تموم بشه
       setTimeout(() => {
         applyNewMotivation();
@@ -4236,7 +4246,7 @@ function _projectsEnsure(s) {
     return true;
   }
   function _healthSortDesc(arr) {
-    return arr.slice().sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(b, a); });
+    return arr.slice().sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(b.date, a.date); });
   }
   function _healthLastBody() {
     var h = _healthEnsure(state); if (!h || !h.bodyLog.length) return null;
@@ -4496,6 +4506,7 @@ var _MEALS = [["breakfast","صبحانه","🍳"],["lunch","ناهار","🍲"],
           out += '<span class="nt-item-name">' + escapeHTML(it.snapshot.name) + '</span>';
           out += '<span class="nt-item-grams">' + _fa0(it.grams) + 'g</span>';
           out += '<span class="nt-item-kcal">' + (ik == null ? "—" : _fa0(ik)) + '</span>';
+          out += '<button class="nt-item-edit" type="button" data-meal-edit="' + m.id + '" data-item-idx="' + ii + '" title="\u270F\uFE0F">\u270F\uFE0F</button>';
           out += '<button class="nt-item-del" type="button" data-meal-del="' + m.id + '" data-item-idx="' + ii + '" title="حذف">✕</button>';
           out += '</li>';
         }
@@ -4751,7 +4762,7 @@ function _renderBodyTab() { /* PATCH:phase-F6-bodyUI */
     var logs = (h.bodyLog || []).filter(function (x) { return x.weightKg; });
     if (logs.length === 0) return '<div class="body-empty"><span class="body-empty-ic">📉</span><div>داده‌ای برای نمودار وجود ندارد</div></div>';
     if (logs.length === 1) return '<div class="body-empty"><span class="body-empty-ic">📊</span><div>برای رسم روند، حداقل دو اندازه‌گیری لازم است</div></div>';
-    logs.sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(a, b); });
+    logs.sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(a.date, b.date); });
     var W = 640, H = 200, P = 28;
     var minV = logs[0].weightKg, maxV = logs[0].weightKg;
     logs.forEach(function (l) { if (l.weightKg < minV) minV = l.weightKg; if (l.weightKg > maxV) maxV = l.weightKg; });
@@ -5178,6 +5189,8 @@ function _renderBodyTab() { /* PATCH:phase-F6-bodyUI */
       var el;
       el = t.closest("[data-meal-add]");
       if (el) { _openMealItemModal(el.getAttribute("data-meal-add")); return; }
+      el = t.closest("[data-meal-edit]");
+      if (el) { _openMealItemEditModal(el.getAttribute("data-meal-edit"), parseInt(el.getAttribute("data-item-idx"), 10)); return; }
       el = t.closest("[data-meal-del]");
       if (el) {
         _mealRemoveItem(state, el.getAttribute("data-meal-del"), parseInt(el.getAttribute("data-item-idx"), 10));
@@ -5529,7 +5542,18 @@ function _renderBodyTab() { /* PATCH:phase-F6-bodyUI */
     });
     return { ok: true };
   }
-  function _mealRemoveItem(s, mealId, itemIndex) {
+  function _mealUpdateItemGrams(s, mealId, itemIndex, newGrams) {
+    if (typeof newGrams !== "number" || isNaN(newGrams) || newGrams <= 0) return false;
+    var h = _healthEnsure(s);
+    for (var i = 0; i < h.foodLog.length; i++) {
+      if (h.foodLog[i].id === mealId) {
+        if (itemIndex < 0 || itemIndex >= h.foodLog[i].items.length) return false;
+        h.foodLog[i].items[itemIndex].grams = newGrams;
+        return true;
+      }
+    }
+    return false;
+  }  function _mealRemoveItem(s, mealId, itemIndex) {
     var h = _healthEnsure(s);
     for (var i = 0; i < h.foodLog.length; i++) {
       if (h.foodLog[i].id === mealId) {
@@ -5773,7 +5797,36 @@ function _dayTotals(s, date) {
       return true;
     });
   }
-  function _healthBannerSummary(id) {
+  function _openMealItemEditModal(mealId, itemIndex) {
+    var h = _healthEnsure(state);
+    var m = null;
+    for (var i = 0; i < h.foodLog.length; i++) if (h.foodLog[i].id === mealId) { m = h.foodLog[i]; break; }
+    if (!m) { _notifyApp("error", "وعده پیدا نشد"); return; }
+    var it = m.items[itemIndex];
+    if (!it) { _notifyApp("error", "غذا پیدا نشد"); return; }
+    var mealLabel = "";
+    for (var mi = 0; mi < _MEALS.length; mi++) if (_MEALS[mi][0] === m.meal) mealLabel = _MEALS[mi][1];
+    var sn = it.snapshot || {};
+    var per100Kcal = (typeof sn.kcal === "number") ? _fa0(sn.kcal) : "—";
+    var inner = '<div class="modal" role="dialog" aria-modal="true">' +
+      '<h3>ویرایش «' + escapeHTML(sn.name || "") + '»</h3>' +
+      '<div class="nt-mitem-helper">' + mealLabel + ' · ' + per100Kcal + ' kcal / ۱۰۰گرم</div>' +
+      '<label class="health-field"><span>مقدار (گرم)</span><input type="number" step="0.1" min="0.1" class="health-input" id="nme-grams" value="' + it.grams + '"></label>' +
+      '<div class="modal-actions">' +
+      '<button class="btn ghost" type="button" data-close>انصراف</button>' +
+      '<button class="btn primary" type="button" data-confirm>ذخیره</button>' +
+      '</div></div>';
+    _showCustomModal(inner, function () {
+      var g = parseFloat(document.getElementById("nme-grams").value);
+      if (isNaN(g) || g <= 0) { _notifyApp("error", "مقدار معتبر وارد کن."); return false; }
+      var ok = _mealUpdateItemGrams(state, mealId, itemIndex, g);
+      if (!ok) { _notifyApp("error", "خطا در ذخیره."); return false; }
+      try { saveState(); } catch (e) {}
+      _notifyApp("success", "ویرایش شد.");
+      renderAreaDetail("body");
+      return true;
+    });
+  }  function _healthBannerSummary(id) {
     var h = _healthEnsure(state);
     var today = todayJalali();
     if (id === "nutrition") {
@@ -6056,7 +6109,7 @@ function _dashNotificationsList() {
       if (t.areaId === "food" || t.areaId === "sleep" || t.areaId === "body") return false;
       return _ioTaskOverdueAt(t, today);
     });
-    od.sort(function(a,b){ return window.InternshipLib.date.compareJalaliDate(a, b); });
+    od.sort(function(a,b){ return window.InternshipLib.date.compareJalaliDate(a.date, b.date); });
     for (var oi=0; oi<Math.min(od.length, 10); oi++) {
       out.push({ kind: "task", icon: "⏰", title: "کار عقب‌افتاده", sub: (od[oi].title||"") + " — " + faDate(od[oi].date), taskId: od[oi].id, date: od[oi].date });
     }
@@ -6533,6 +6586,25 @@ function _updateDashBell() {
     }
     document.title = "هم‌مطالعه — Internship OS";
   }
+  function _stPlanFallbackTitle(category, startTime) {
+    var c = String(category || "").toLowerCase();
+    var label = "فعالیت";
+    if (c === "study" || c === "residency") label = "مطالعه";
+    else if (c === "clinical") label = "بالین";
+    else if (c === "review") label = "مرور";
+    else if (c === "assessment") label = "آزمون";
+    else if (c === "sleep" || c === "rest") label = "خواب";
+    else if (c === "food") label = "غذا";
+    else if (c === "body" || c === "exercise") label = "ورزش";
+    else if (c === "life" || c === "personal") label = "زندگی";
+    else if (c === "hospital") label = "بیمارستان";
+    else if (c === "income") label = "کار";
+    if (startTime) {
+      var t = String(startTime).slice(0, 5);
+      label = label + " — " + t;
+    }
+    return label;
+  }
   function _stGetDailyPlan(dateJalali) {
   try {
     var R = window.InternshipResidency;
@@ -6545,7 +6617,7 @@ function _updateDashBell() {
       date = b && typeof b.todayJalali === "function" ? b.todayJalali() : null;
     }
     if (!date) return null;
-    var items = R.schedulingProjection.projectDate(st, date, {});
+    var items = _dedupItemsForOverlap(R.schedulingProjection.projectDate(st, date, {}));
     if (!Array.isArray(items)) return null;
 
     var allowedSourceTypes = { task: 1, residencyActivity: 1 };
@@ -6558,7 +6630,13 @@ function _updateDashBell() {
       if (!allowedSourceTypes[it.sourceType]) continue;
       if (!allowedRoles[it.role]) continue;
       out.push({
-        title: String(it.title || "").slice(0, 120),
+        title: (function(){
+          var _tt = String(it.title || "").trim().slice(0, 120);
+          if (!_tt || _tt === "فعالیت بدون عنوان" || _tt.indexOf("بدون عنوان") === 0) {
+            return _stPlanFallbackTitle(it.category, it.startTime);
+          }
+          return _tt;
+        })(),
         category: String(it.category || "").slice(0, 32),
         startTime: it.startTime ? String(it.startTime).slice(0, 5) : null,
         endTime: it.endTime ? String(it.endTime).slice(0, 5) : null,
@@ -7175,6 +7253,11 @@ function contentRefId(areaId, sourceType, sourceId) {
   /* ─── Calendar ─────────────────────────────────────────── */
 
   let calView = null;
+var _calViewMode = "month";
+var _calMotivationCollapsed = false;
+var _calPlanningCollapsed = false;
+var _pendingCalView = null;
+var _calWeekSat = null;
   let calSelected = null;
 
   function initCalendarView() {
@@ -7184,22 +7267,75 @@ function contentRefId(areaId, sourceType, sourceId) {
     if (!calSelected) calSelected = { jy: t.jy, jm: t.jm, jd: t.jd };
   }
 
-   function tasksOnDate(jy, jm, jd) { /* PATCH:phase-F7-merge5 */
+   function tasksOnDate(jy, jm, jd) { /*R2-EXPAND*/
     var _sch = state.sleep && state.sleep.schedule && state.sleep.schedule.night;
     var _eveDur = 0;
     if (_sch && _sch.bedTime) {
       var _bp = String(_sch.bedTime).split(":");
       _eveDur = 1440 - (parseInt(_bp[0],10)*60 + parseInt(_bp[1],10));
     }
-    return state.tasks.filter((t) => {
-      if (!t) return false;
-      if (t.cancelled === true) return false;   /* [PATCH:issue-104] */
-      if (t._sleepAuto === "night:evening") return false;
-      const p = parseJalali(t.date);
-      return p && p.jy === jy && p.jm === jm && p.jd === jd;
-    }).map((t) => {
+    var _dateKey = jy + "/" + jm + "/" + jd;
+    var _items = [];
+    try { _items = _getEffectiveItems(_dateKey) || []; } catch (e) { _items = []; }
+    var out = [];
+    _items.forEach(function (it) {
+      if (!it) return;
+      if (it.status === "cancelled") return;
+      if (it.sourceType === "shift") return;
+      if (it.sourceType !== "task" && it.sourceType !== "manual" && it.sourceType !== "residencyActivity") return;
+      if (it.isVirtual) {
+        var parent = state.tasks.find(function(t){ return t.id === it.parentTaskId; });
+        if (!parent || parent.cancelled === true) return;
+        if (parent._sleepAuto === "night:evening") return;
+        var isSkip = parent.recurrenceExceptions && parent.recurrenceExceptions[it.occurrenceDate] === "skipped";
+        if (isSkip) return;
+        out.push(Object.assign({}, parent, {
+          id: it.id, date: it.occurrenceDate,
+          time: it.startTime || parent.time,
+          durationMinutes: it.durationMinutes || parent.durationMinutes,
+          completed: (it.status === "completed"),
+          _isVirtual: true
+        }));
+      } else if (it.sourceType === "task" || it.sourceType === "manual") {
+        var t = state.tasks.find(function(x){ return x.id === it.sourceId; });
+        if (!t || t.cancelled === true) return;
+        if (t._sleepAuto === "night:evening") return;
+        if (t.recurrence && t.recurrence !== "none") {
+          var vId = "virtual:" + t.id + "@" + _dateKey;
+          var isComp = (t.recurrenceExceptions && t.recurrenceExceptions[_dateKey] === "completed");
+          var isSk = (t.recurrenceExceptions && t.recurrenceExceptions[_dateKey] === "skipped");
+          if (isSk) return;
+          out.push(Object.assign({}, t, { id: vId, date: _dateKey, completed: isComp, _isVirtual: true }));
+        } else {
+          out.push(Object.assign({}, t, { completed: (it.status === "completed") }));
+        }
+      } else if (it.sourceType === "residencyActivity") {
+        out.push({
+          id: it.id, title: it.title, areaId: "residency",
+          completed: (it.status === "completed"),
+          date: _dateKey, time: it.startTime, durationMinutes: it.durationMinutes,
+          _isActivity: true, sourceType: "residencyActivity"
+        });
+      }
+    });
+    var _rawSel = state.tasks.filter(function(task){ return task.date === _dateKey && task.cancelled !== true && !task.time && task._sleepAuto !== "night:evening"; });
+    _rawSel.forEach(function(rt) {
+      if (!out.find(function(x){ return x.id === rt.id || (x._isVirtual && x.id.indexOf(rt.id) > -1); })) {
+        if (rt.recurrence && rt.recurrence !== "none") {
+          var vId2 = "virtual:" + rt.id + "@" + _dateKey;
+          var isComp2 = (rt.recurrenceExceptions && rt.recurrenceExceptions[_dateKey] === "completed");
+          var isSk2 = (rt.recurrenceExceptions && rt.recurrenceExceptions[_dateKey] === "skipped");
+          if (!isSk2) {
+            out.push(Object.assign({}, rt, { id: vId2, date: _dateKey, completed: isComp2, _isVirtual: true }));
+          }
+        } else {
+          out.push(rt);
+        }
+      }
+    });
+    return out.map(function(t) {
       if (t._sleepAuto === "night:morning" && _sch && _sch.bedTime) {
-        const m = Object.assign({}, t);
+        var m = Object.assign({}, t);
         m.time = _sch.bedTime;
         m.durationMinutes = (t.durationMinutes || 0) + _eveDur;
         return m;
@@ -7208,53 +7344,322 @@ function contentRefId(areaId, sourceType, sourceId) {
     });
   }
 
-  function renderCalendar() {
-    initCalendarView();
-    const { jy, jm } = calView;
-    const monthLen = jalaliMonthLength(jy, jm);
-    const startWeekday = jalaliMonthStartWeekday(jy, jm);
-    const today = todayJalali();
-
-    const cells = [];
-    for (let i = 0; i < startWeekday; i++) cells.push(null);
-    for (let d = 1; d <= monthLen; d++) cells.push(d);
-
-    view.innerHTML = `
-      <div class="cal-layout">
-      <div class="cal-layout-main">
-      <section class="calendar">
-        <div class="cal-head">
-          <button class="cal-nav" data-cal-prev type="button" aria-label="ماه قبل">‹</button>
-          <div class="cal-title">
-            <div class="cal-month">${JMONTHS[jm - 1]} ${faNum(jy)}</div>
-            <button class="cal-today-btn" data-cal-today type="button">امروز</button>
-          </div>
-          <button class="cal-nav" data-cal-next type="button" aria-label="ماه بعد">›</button>
-        </div>
-        <div class="cal-weekdays">${JWEEKDAYS.map((w) => `<div class="cal-weekday">${w}</div>`).join("")}</div>
-        <div class="cal-grid">
-          ${cells.map((d) => d === null ? '<div class="cal-cell empty"></div>' : calDayHTML(d, jy, jm, today)).join("")}
-        </div>
-      </section>
-
-      <section class="cal-legend" aria-label="راهنمای رنگ‌ها">
-        <span class="legend-item"><span class="legend-swatch today-swatch"></span> امروز</span>
-        <span class="legend-item"><span class="legend-swatch pending-swatch"></span> کار دارد</span>
-        <span class="legend-item"><span class="legend-swatch partial-swatch"></span> نیمه‌کاره</span>
-        <span class="legend-item"><span class="legend-swatch done-swatch"></span> کامل</span>
-        <span class="legend-item"><span class="legend-swatch past-swatch"></span> گذشته</span>
-        <span class="legend-item"><span class="legend-dot"></span> تسک ثبت‌شده</span>
-      </section>
-
-      </div>
-      <section class="day-panel">${selectedDateHTML()}</section>
-      </div>
-      <section class="cal-day-timeline" id="cal-day-timeline"></section>
-    `;
-
-    document.title = "تقویم — Internship OS";
-    wireCalendarEvents();
+  // ===== Stage 6 helpers =====
+function _calOccurrenceDone(t, dKey) {
+  if (!t) return false;
+  if (t.recurrence && t.recurrence !== "none") {
+    return !!(t.recurrenceExceptions && t.recurrenceExceptions[dKey] === "completed");
   }
+  return !!t.completed;
+}
+
+function _buildCalendarWeek(baseJy, baseJm, baseJd) {
+  const sat = _getSaturdayOfWeek(baseJy, baseJm, baseJd, 0);
+  const days = [];
+  const today = todayJalali();
+  for (let i = 0; i < 7; i++) {
+    const d = addJalaliDays(sat.jy, sat.jm, sat.jd, i);
+    const dKey = d.jy + "/" + d.jm + "/" + d.jd;
+    const dTasks = tasksOnDate(d.jy, d.jm, d.jd);
+    const done = dTasks.filter(function(x){ return _calOccurrenceDone(x, dKey); }).length;
+    days.push({
+      jy: d.jy, jm: d.jm, jd: d.jd, key: dKey,
+      weekday: weekdayName(d.jy, d.jm, d.jd),
+      isToday: (dKey === today),
+      total: dTasks.length, done: done,
+      shifts: (typeof shiftsOnDate === "function") ? shiftsOnDate(d.jy, d.jm, d.jd).length : 0
+    });
+  }
+  return days;
+}
+
+function _planningTaskGroups() {
+  const today = todayJalali();
+  const t = parseJalali(today);
+  const tomorrow = addJalaliDays(t.jy, t.jm, t.jd, 1);
+  const in7 = addJalaliDays(t.jy, t.jm, t.jd, 7);
+  const in7Key = dateKey(in7.jy, in7.jm, in7.jd);
+  const tomorrowKey = dateKey(tomorrow.jy, tomorrow.jm, tomorrow.jd);
+  const groups = [
+    { id: "overdue",  title: "عقب‌افتاده", accent: "251, 113, 133", tasks: [] },
+    { id: "today",    title: "امروز",      accent: "45, 212, 191",  tasks: [] },
+    { id: "tomorrow", title: "فردا",       accent: "129, 140, 248", tasks: [] },
+    { id: "week",     title: "این هفته",   accent: "167, 139, 250", tasks: [] },
+    { id: "later",    title: "بعدتر",      accent: "148, 163, 184", tasks: [] }
+  ];
+  state.tasks.forEach(function (task) {
+    if (!parseJalali(task.date)) return;
+    if (task.cancelled === true) return;
+    if (_ioTaskOverdueAt(task, today)) { groups[0].tasks.push(task); return; }
+    const cmpToday = compareJalaliDate(task.date, today);
+    const cmp7 = compareJalaliDate(task.date, in7Key);
+    if (cmpToday === 0) groups[1].tasks.push(task);
+    else if (task.date === tomorrowKey) groups[2].tasks.push(task);
+    else if (cmp7 <= 0) groups[3].tasks.push(task);
+    else groups[4].tasks.push(task);
+  });
+  groups.forEach(function (g) {
+    g.tasks.sort(function (a, b) {
+      const da = compareJalaliDate(a.date, b.date);
+      if (da !== 0) return da;
+      const aa = (typeof AREA_PRIORITY !== "undefined" && AREA_PRIORITY[a.areaId]) || 99;
+      const ab = (typeof AREA_PRIORITY !== "undefined" && AREA_PRIORITY[b.areaId]) || 99;
+      if (aa !== ab) return aa - ab;
+      return (a.time || "").localeCompare(b.time || "");
+    });
+  });
+  return groups;
+}
+
+function _calRowHTML(task) {
+  const area = (typeof areaById === "function") ? areaById(task.areaId) : null;
+  const today = todayJalali();
+  const p = parseJalali(task.date);
+  const isToday = task.date === today;
+  const isPast = compareJalaliDate(task.date, today) < 0;
+  const _done = _calOccurrenceDone(task, task.date);
+  const currentRot = (typeof getCurrentRotation === "function") ? getCurrentRotation() : null;
+  const isRotationLinked = !!(currentRot && task.sourceSpec && currentRot.clinicalModuleId === task.sourceSpec);
+  const dateChip = isToday ? "" : '<span class="task-date-chip ' + (isPast ? "overdue" : "") + '">' + (p ? prettyDate(p.jy, p.jm, p.jd) : "") + '</span>';
+  const timeChip = task.time ? '<span class="task-time-chip">' + faNum(task.time) + '</span>' : "";
+  const recurBadge = (task.recurrence && task.recurrence !== "none") ? '<span class="task-recur-badge" title="تکرار">↻</span>' : "";
+  const srcBadge = (typeof taskSourceBadgeHTML === "function") ? taskSourceBadgeHTML(task) : "";
+  return '<li class="task-row planner-row ' + (_done ? "done" : "") + ' ' + (isRotationLinked ? "rotation-linked" : "") + '">' +
+    '<span class="task-check" data-toggle-task="' + task.id + '" role="checkbox" aria-checked="' + _done + '" tabindex="0" aria-label="' + escapeHTML(task.title) + '"></span>' +
+    '<span class="task-title">' + escapeHTML(task.title) + '</span>' +
+    srcBadge +
+    (isRotationLinked ? '<span class="task-rotation-badge" title="مرتبط با روتیشن">🏥</span>' : "") +
+    recurBadge + timeChip +
+    (area ? '<span class="task-area-pill">' + area.icon + ' ' + escapeHTML(area.title) + '</span>' : "") +
+    dateChip +
+    '<span class="task-actions">' +
+      '<button class="task-action" type="button" data-edit-task="' + task.id + '" title="ویرایش">✏️</button>' +
+      '<button class="task-action" type="button" data-delete-task="' + task.id + '" title="حذف">🗑️</button>' +
+    '</span>' +
+  '</li>';
+}
+
+function _calGroupHTML(g) {
+  const areaGroups = {};
+  g.tasks.forEach(function (task) {
+    const aid = task.areaId || "_none";
+    if (!areaGroups[aid]) areaGroups[aid] = [];
+    areaGroups[aid].push(task);
+  });
+  const areaKeys = Object.keys(areaGroups);
+  const doneCnt = g.tasks.filter(function(t){ return _calOccurrenceDone(t, t.date); }).length;
+  let listHTML = "";
+  areaKeys.forEach(function (aid) {
+    const aTasks = areaGroups[aid];
+    const area = (aid === "_none" || typeof areaById !== "function") ? null : areaById(aid);
+    const aDone = aTasks.filter(function(t){ return _calOccurrenceDone(t, t.date); }).length;
+    listHTML += '<li class="planner-area-subgroup">';
+    if (area) {
+      listHTML += '<div class="planner-area-head">' +
+        '<span class="planner-area-icon">' + area.icon + '</span>' +
+        '<span class="planner-area-title">' + escapeHTML(area.title) + '</span>' +
+        '<span class="planner-area-count">' + faNum(aDone) + '/' + faNum(aTasks.length) + '</span>' +
+      '</div>';
+    }
+    listHTML += '<ul class="planner-sub-list">' + aTasks.map(_calRowHTML).join('') + '</ul>';
+    listHTML += '</li>';
+  });
+  return '<section class="planner-group cal-planning-group" style="--accent:' + g.accent + '">' +
+    '<div class="planner-group-head">' +
+      '<span class="planner-group-title">' + g.title + '</span>' +
+      '<span class="planner-group-count">' + faNum(doneCnt) + ' / ' + faNum(g.tasks.length) + '</span>' +
+    '</div>' +
+    '<ul class="planner-list">' + listHTML + '</ul>' +
+  '</section>';
+}
+
+function _calPlanningSectionHTML() {
+  const arrow = _calPlanningCollapsed ? "▾" : "▴";
+  const header = '<button class="cal-planning-toggle" type="button" data-cal-planning-toggle>📋 برنامه‌ریزی ' + arrow + '</button>';
+  if (_calPlanningCollapsed) {
+    return '<div class="cal-planning-wrap is-collapsed">' + header + '</div>';
+  }
+  const groups = _planningTaskGroups();
+  const active = groups.filter(function(g){ return g.tasks.length > 0; });
+  if (active.length === 0) {
+    return '<div class="cal-planning-wrap">' + header +
+      '<div class="placeholder"><span class="placeholder-icon">📝</span>' +
+        '<h2>هنوز کاری ثبت نشده</h2>' +
+        '<p>با دکمهٔ «+ کار» اولین کار را بساز.</p></div></div>';
+  }
+  return '<div class="cal-planning-wrap">' + header +
+    '<div class="cal-planning-groups">' + active.map(_calGroupHTML).join('') + '</div></div>';
+}
+
+function _calMotivationHTML() {
+  const mot = (typeof getRandomMotivation === "function") ? getRandomMotivation() : { emoji: "✨", text: "" };
+  return '<section class="dash-motivation cal-motivation" id="cal-motivation">' +
+    '<div class="dash-motivation-emoji" aria-hidden="true">' + (mot.emoji || "✨") + '</div>' +
+    '<div class="dash-motivation-text">' + escapeHTML(mot.text || "") + '</div>' +
+    '<button class="dash-motivation-refresh" type="button" data-cal-motivation-refresh title="پیام دیگه">🔄</button>' +
+    '<button class="dash-motivation-collapse" type="button" data-cal-motivation-collapse title="بستن">✕</button>' +
+  '</section>';
+}
+
+function _calRotContextHTML() {
+  const currentRot = (typeof getCurrentRotation === "function") ? getCurrentRotation() : null;
+  if (!currentRot) return "";
+  const rotColor = currentRot.color || "45, 212, 191";
+  const rStart = parseJalali(currentRot.startDate);
+  const rEnd = parseJalali(currentRot.endDate);
+  if (!rStart || !rEnd) return "";
+  const t = parseJalali(todayJalali());
+  if (!t) return "";
+  const rotStartDay = jalaliToDayNumber(rStart.jy, rStart.jm, rStart.jd);
+  const rotEndDay = jalaliToDayNumber(rEnd.jy, rEnd.jm, rEnd.jd);
+  const todayDay = jalaliToDayNumber(t.jy, t.jm, t.jd);
+  const totalDays = rotEndDay - rotStartDay + 1;
+  const elapsed = Math.max(0, todayDay - rotStartDay + 1);
+  const pct = Math.min(100, Math.round((elapsed / totalDays) * 100));
+  const monthNum = Math.ceil(elapsed / 30);
+  const monthTotal = Math.ceil(totalDays / 30);
+  return '<div class="planner-rot-context cal-rot-context" style="--rotation-color:rgb(' + rotColor + ')">' +
+    '<span class="planner-rot-icon">🏥</span>' +
+    '<div class="planner-rot-text">' +
+      '<div class="planner-rot-title">روتیشن فعلی: <strong>' + escapeHTML(currentRot.title) + '</strong></div>' +
+      '<div class="planner-rot-sub">ماه ' + faNum(monthNum) + ' از ' + faNum(monthTotal) + ' — ' + faNum(pct) + '٪ گذشت</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function _calMonthViewHTML(jy, jm, today) {
+  const monthLen = jalaliMonthLength(jy, jm);
+  const startWeekday = jalaliMonthStartWeekday(jy, jm);
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= monthLen; d++) cells.push(d);
+  let html = '<section class="calendar">' +
+    '<div class="cal-head">' +
+      '<button class="cal-nav" data-cal-prev type="button" aria-label="ماه قبل">‹</button>' +
+      '<div class="cal-title">' +
+        '<div class="cal-month">' + JMONTHS[jm - 1] + ' ' + faNum(jy) + '</div>' +
+        '<button class="cal-today-btn" data-cal-today type="button">امروز</button>' +
+      '</div>' +
+      '<button class="cal-nav" data-cal-next type="button" aria-label="ماه بعد">›</button>' +
+    '</div>' +
+    '<div class="cal-weekdays">' + JWEEKDAYS.map(function(w){ return '<div class="cal-weekday">' + w + '</div>'; }).join("") + '</div>' +
+    '<div class="cal-grid">' + cells.map(function(d){ return d === null ? '<div class="cal-cell empty"></div>' : calDayHTML(d, jy, jm, today); }).join("") + '</div>' +
+  '</section>' +
+  '<section class="cal-legend" aria-label="راهنمای رنگ‌ها">' +
+    '<span class="legend-item"><span class="legend-swatch today-swatch"></span> امروز</span>' +
+    '<span class="legend-item"><span class="legend-swatch pending-swatch"></span> کار دارد</span>' +
+    '<span class="legend-item"><span class="legend-swatch partial-swatch"></span> نیمه‌کاره</span>' +
+    '<span class="legend-item"><span class="legend-swatch done-swatch"></span> کامل</span>' +
+    '<span class="legend-item"><span class="legend-swatch past-swatch"></span> گذشته</span>' +
+    '<span class="legend-item"><span class="legend-dot"></span> تسک ثبت‌شده</span>' +
+  '</section>';
+  return html;
+}
+
+function _calWeekViewHTML(jy, jm, today) {
+  if (!_calWeekSat) {
+    var _tt = parseJalali(todayJalali());
+    if (_tt) _calWeekSat = _getSaturdayOfWeek(_tt.jy, _tt.jm, _tt.jd, 0);
+  }
+  const week = [];
+  for (let i = 0; i < 7; i++) {
+    const d = addJalaliDays(_calWeekSat.jy, _calWeekSat.jm, _calWeekSat.jd, i);
+    const dKey = d.jy + "/" + d.jm + "/" + d.jd;
+    const dTasks = tasksOnDate(d.jy, d.jm, d.jd);
+    const done = dTasks.filter(function(x){ return _calOccurrenceDone(x, dKey); }).length;
+    const shifts = (typeof shiftsOnDate === "function") ? shiftsOnDate(d.jy, d.jm, d.jd).length : 0;
+    week.push({
+      jy: d.jy, jm: d.jm, jd: d.jd, key: dKey,
+      weekday: weekdayName(d.jy, d.jm, d.jd),
+      isToday: (dKey === today),
+      total: dTasks.length, done: done, shifts: shifts
+    });
+  }
+  const weekStart = week[0];
+  const weekEnd = week[6];
+  let html = '<section class="calendar cal-week-view">' +
+    '<div class="cal-head">' +
+      '<button class="cal-nav" data-cal-prev type="button" aria-label="هفته قبل">‹</button>' +
+      '<div class="cal-title">' +
+        '<div class="cal-month">' + faNum(weekStart.jd) + ' ' + JMONTHS[weekStart.jm - 1] + ' — ' + faNum(weekEnd.jd) + ' ' + JMONTHS[weekEnd.jm - 1] + '</div>' +
+        '<button class="cal-today-btn" data-cal-today type="button">امروز</button>' +
+      '</div>' +
+      '<button class="cal-nav" data-cal-next type="button" aria-label="هفته بعد">›</button>' +
+    '</div>' +
+    '<div class="cal-week-grid-7">';
+  week.forEach(function(w){
+    var _calSelNow = ""; if (typeof calSelected !== "undefined" && calSelected) { if (typeof calSelected === "string") _calSelNow = calSelected; else if (calSelected.jy) _calSelNow = calSelected.jy + "/" + calSelected.jm + "/" + calSelected.jd; }
+    html += '<div class="cal-week-day ' + (w.isToday ? 'is-today ' : '') + (w.key === _calSelNow ? 'is-selected' : '') + '" data-cal-day="' + w.key + '">' +
+      '<div class="cal-week-dayname">' + w.weekday.slice(0, 3) + '</div>' +
+      '<div class="cal-week-daynum">' + faNum(w.jd) + '</div>' +
+      '<div class="cal-week-meta">' + (w.total > 0 ? faNum(w.done) + '/' + faNum(w.total) : '—') + '</div>' +
+      (w.shifts > 0 ? '<span class="cal-week-shift-dot"></span>' : '') +
+    '</div>';
+  });
+  html += '</div></section>';
+  return html;
+}
+
+function _calWeekShift(delta) {
+  if (!_calWeekSat) {
+    const today = parseJalali(todayJalali());
+    _calWeekSat = _getSaturdayOfWeek(today.jy, today.jm, today.jd, 0);
+  }
+  _calWeekSat = addJalaliDays(_calWeekSat.jy, _calWeekSat.jm, _calWeekSat.jd, delta);
+}
+// ===== /Stage 6 helpers =====
+function renderCalendar() {
+  initCalendarView();
+  if (_pendingCalView) { _calViewMode = _pendingCalView; _pendingCalView = null; }
+  const { jy, jm } = calView;
+  const today = todayJalali();
+  const mode = _calViewMode;
+
+  let hdr = '<div class="cal-top-header">' +
+    '<div class="cal-view-toggle" role="group" aria-label="نمای تقویم">' +
+      '<button class="cal-vt-btn ' + (mode === 'month' ? 'is-active' : '') + '" data-cal-view="month" type="button" aria-pressed="' + (mode === 'month') + '">📅 ماه</button>' +
+      '<button class="cal-vt-btn ' + (mode === 'week' ? 'is-active' : '') + '" data-cal-view="week" type="button" aria-pressed="' + (mode === 'week') + '">📅 هفته</button>' +
+      '<button class="cal-vt-btn ' + (mode === 'list' ? 'is-active' : '') + '" data-cal-view="list" type="button" aria-pressed="' + (mode === 'list') + '">📋 فهرست</button>' +
+    '</div>' +
+    '<div class="cal-top-actions">' +
+      '<button class="btn ghost small" data-ai-generator-life type="button" title="تولید محتوا با AI">🤖 AI</button>' +
+      '<button class="btn ghost small" data-cal-add-shift-bulk type="button">+ کشیک گروهی</button>' +
+      '<button class="btn ghost small" data-cal-add-shift type="button">+ کشیک</button>' +
+      '<button class="btn primary small" data-cal-add type="button">+ کار</button>' +
+    '</div>' +
+  '</div>';
+
+  let strip = '';
+  if (!_calMotivationCollapsed) strip += _calMotivationHTML();
+  strip += _calRotContextHTML();
+
+  let body = '';
+  if (mode === 'month') body = _calMonthViewHTML(jy, jm, today);
+  else if (mode === 'week') body = _calWeekViewHTML(jy, jm, today);
+  else body = '<div class="cal-list-layout">' + _calPlanningSectionHTML() + '</div>';
+
+  if (mode === 'list') {
+    view.innerHTML = hdr + strip + body;
+  } else {
+    view.innerHTML = hdr + strip +
+      '<div class="cal-layout">' +
+        '<div class="cal-layout-main">' + body + '</div>' +
+        '<section class="day-panel">' + selectedDateHTML() + '</section>' +
+      '</div>' +
+      '<section class="cal-day-timeline" id="cal-day-timeline"></section>';
+  }
+
+  document.title = "تقویم — Internship OS";
+  wireCalendarEvents();
+
+/*R1-WIRE2*/ setTimeout(function () {
+  try {
+    var _tlHostFallback = document.getElementById('cal-day-timeline');
+    if (_tlHostFallback && !_tlHostFallback.querySelector('.dt20-item.__dt20Wired')) {
+      _wireTimelineActions(_tlHostFallback);
+    }
+  } catch (er) {}
+}, 120);}
 
     function calDayHTML(d, jy, jm, todayStr) {
     const key = dateKey(jy, jm, d);
@@ -7324,17 +7729,56 @@ function contentRefId(areaId, sourceType, sourceId) {
     `;
   }
 
-  function wireCalendarEvents() {
+  function _wireTimelineActions(host) { /*R1-WIRE*/
+  if (!host) return;
+  var _dk = "";
+  try { if (calSelected && calSelected.jy) _dk = calSelected.jy + "/" + calSelected.jm + "/" + calSelected.jd; } catch (e) {}
+  host.querySelectorAll('.dt20-item').forEach(function (item) {
+    if (item.__dt20Wired) return;
+    item.__dt20Wired = true;
+    var src = item.getAttribute('data-dt20-source') || '';
+    var sid = item.getAttribute('data-dt20-sourceid') || '';
+    var did = item.getAttribute('data-dt20-id') || '';
+    item.querySelectorAll('.dt20-act').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var act = btn.getAttribute('data-act');
+        if (act === 'done') {
+          var tid = "";
+          if (did.indexOf('virtual:') === 0) tid = did;
+          else if (src === 'task' && sid) {
+            var parent = null;
+            for (var _i = 0; _i < state.tasks.length; _i++) { if (state.tasks[_i].id === sid) { parent = state.tasks[_i]; break; } }
+            if (parent && parent.recurrence && parent.recurrence !== "none" && _dk) tid = "virtual:" + sid + "@" + _dk;
+            else tid = sid;
+          }
+          if (tid) {
+            try { toggleTask(tid); } catch (er) { console.warn('[cal-tl] toggle error', er); }
+            try { renderCalendar(); } catch (er) {}
+          }
+        } else if (act === 'edit') {
+          if (src === 'task' && sid) {
+            try { openTaskForm(sid); } catch (er) { console.warn('[cal-tl] edit error', er); }
+          } else if (src === 'residencyActivity' && sid) {
+            try { if (typeof openResidencyActivityTimingModal === 'function') openResidencyActivityTimingModal(sid); } catch (er) {}
+          }
+        }
+      });
+    });
+  });
+}function wireCalendarEvents() {
     const prev = view.querySelector("[data-cal-prev]");
     const next = view.querySelector("[data-cal-next]");
     const todayBtn = view.querySelector("[data-cal-today]");
 
-    if (prev) prev.addEventListener("click", () => { calView = addJalaliMonths(calView.jy, calView.jm, -1); renderCalendar(); });
-    if (next) next.addEventListener("click", () => { calView = addJalaliMonths(calView.jy, calView.jm, 1); renderCalendar(); });
+    if (prev) prev.addEventListener("click", () => { if (_calViewMode === "week") { _calWeekShift(-7); } else { calView = addJalaliMonths(calView.jy, calView.jm, -1); } renderCalendar(); });
+    if (next) next.addEventListener("click", () => { if (_calViewMode === "week") { _calWeekShift(7); } else { calView = addJalaliMonths(calView.jy, calView.jm, 1); } renderCalendar(); });
     if (todayBtn) todayBtn.addEventListener("click", () => {
-      const t = parseJalali(todayJalali());
-      calView = { jy: t.jy, jm: t.jm };
-      calSelected = { jy: t.jy, jm: t.jm, jd: t.jd };
+      const _t = parseJalali(todayJalali());
+      calView = { jy: _t.jy, jm: _t.jm };
+      _calWeekSat = null;
+      if (typeof calSelected !== "undefined") calSelected = { jy: _t.jy, jm: _t.jm, jd: _t.jd };
+      _calViewMode = _calViewMode; // keep mode
       renderCalendar();
     });
 
@@ -7357,7 +7801,7 @@ function contentRefId(areaId, sourceType, sourceId) {
       if (_calTl && typeof InternshipTimeline !== "undefined" && InternshipTimeline.render && calSelected) {
         try {
           var _calDateStr = calSelected.jy + "/" + calSelected.jm + "/" + calSelected.jd;
-          if (window.InternshipResidency && window.InternshipResidency.dayTimeline && window.InternshipResidency.dayTimeline.render) { window.InternshipResidency.dayTimeline.render(_calTl, _calDateStr, state, {}); } else { InternshipTimeline.render(_calTl, _calDateStr, state.tasks, state.shifts || [], {}); }
+          if (window.InternshipResidency && window.InternshipResidency.dayTimeline && window.InternshipResidency.dayTimeline.render) { window.InternshipResidency.dayTimeline.render(_calTl, _calDateStr, state, {}); /*R1-WIRE2*/ try { _wireTimelineActions(_calTl); } catch (er) { console.warn("[cal-tl] wire-after-render error", er); } } else { InternshipTimeline.render(_calTl, _calDateStr, state.tasks, state.shifts || [], {}); }
         } catch (e) { console.warn("[cal-timeline]", e); }
       }
     }, 60);
@@ -7365,11 +7809,17 @@ function contentRefId(areaId, sourceType, sourceId) {
     const addBtn = view.querySelector("[data-cal-add]");
     if (addBtn) addBtn.addEventListener("click", () => openTaskForm(null, calSelected));
 
-    const addShiftBtn = view.querySelector("[data-cal-add-shift]");
-    if (addShiftBtn) addShiftBtn.addEventListener("click", () => openShiftForm(null, calSelected));
+    view.querySelectorAll("[data-cal-add-shift]").forEach(function (el) {
+      if (el.__ioShiftWired) return;
+      el.__ioShiftWired = true;
+      el.addEventListener("click", function () { openShiftForm(null, calSelected); });
+    });
 
-    const addBulkBtn = view.querySelector("[data-cal-add-shift-bulk]");
-    if (addBulkBtn) addBulkBtn.addEventListener("click", () => openBulkShiftForm());
+    view.querySelectorAll("[data-cal-add-shift-bulk]").forEach(function (el) {
+      if (el.__ioBulkWired) return;
+      el.__ioBulkWired = true;
+      el.addEventListener("click", function () { if (typeof openBulkShiftForm === "function") openBulkShiftForm(); });
+    });
 
     view.querySelectorAll("[data-edit-shift]").forEach((b) => {
       b.addEventListener("click", () => openShiftForm(b.dataset.editShift));
@@ -7377,7 +7827,56 @@ function contentRefId(areaId, sourceType, sourceId) {
     view.querySelectorAll("[data-delete-shift]").forEach((b) => {
       b.addEventListener("click", () => confirmDeleteShift(b.dataset.deleteShift));
     });
-  }
+  
+  // Stage 6: view toggle
+  view.querySelectorAll('[data-cal-view]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const v = btn.getAttribute('data-cal-view');
+      if (v === 'month' || v === 'week' || v === 'list') {
+        _calViewMode = v;
+        if (v === 'week') _calWeekSat = null;
+        renderCalendar();
+      }
+    });
+  });
+  // Stage 6: motivation refresh + collapse
+  const _motRefresh = view.querySelector('[data-cal-motivation-refresh]');
+  if (_motRefresh) _motRefresh.addEventListener('click', function () { renderCalendar(); });
+  const _motCollapse = view.querySelector('[data-cal-motivation-collapse]');
+  if (_motCollapse) _motCollapse.addEventListener('click', function () { _calMotivationCollapsed = true; renderCalendar(); });
+  // Stage 6: planning section toggle
+  const _planToggle = view.querySelector('[data-cal-planning-toggle]');
+  if (_planToggle) _planToggle.addEventListener('click', function () { _calPlanningCollapsed = !_calPlanningCollapsed; renderCalendar(); });
+  // Stage 6: AI generator button
+  const _aiBtn = view.querySelector('[data-ai-generator-life]');
+  if (_aiBtn) _aiBtn.addEventListener('click', function () {
+    try { if (typeof _openAIContentModal === 'function') _openAIContentModal('life'); } catch (e) { console.warn('[cal] AI open failed', e); }
+  });
+  /*S6-FIX1*/ view.querySelectorAll('[data-cal-day]').forEach(function (el) {
+    if (el.__ioCalDayWired) return;
+    el.__ioCalDayWired = true;
+    el.addEventListener('click', function () {
+      const k = el.getAttribute('data-cal-day');
+      if (!k) return;
+      const _p = parseJalali(k);
+      if (!_p) return;
+      if (typeof calSelected !== 'undefined') calSelected = { jy: _p.jy, jm: _p.jm, jd: _p.jd };
+      calView = { jy: _p.jy, jm: _p.jm };
+      renderCalendar();
+    });
+  });
+  /*removed duplicate*/
+  /*S6-FIX1*/ view.querySelectorAll('[data-cal-add-shift-bulk]').forEach(function (el) {
+    if (el.__ioCalBulkShiftWired) return;
+    el.__ioCalBulkShiftWired = true;
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      try {
+        if (typeof openBulkShiftForm === 'function') openBulkShiftForm();
+        else console.warn('[cal] openBulkShiftForm not found');
+      } catch (er) { console.warn('[cal] bulk shift click error:', er); }
+    });
+  });}
 
   /* ─── Planner ──────────────────────────────────────────── */
 
@@ -7388,35 +7887,6 @@ function contentRefId(areaId, sourceType, sourceId) {
     const t = parseJalali(today);
     
     // Delegated Conflict Toggle
-    if (!window.__conflictDelegationWired) {
-        window.__conflictDelegationWired = true;
-        document.addEventListener('click', function(e) {
-            var banner = e.target.closest('#dash-conflict-host');
-            if (!banner) return;
-            if (e.target.closest('.dash-conflict-row')) return;
-            
-            var list = banner.querySelector('.dash-conflict-list');
-            var chevron = banner.querySelector('.dash-alert-chevron');
-            var sub = banner.querySelector('.dash-alert-sub');
-            var isCollapsed = banner.classList.contains('is-collapsed');
-            
-            if (isCollapsed) {
-                banner.classList.remove('is-collapsed');
-                banner.classList.add('is-expanded');
-                if (list) list.style.display = 'block';
-                if (chevron) chevron.textContent = '▴';
-                if (sub) sub.textContent = 'برای بستن کلیک کن.';
-                window.__dashConflictExpanded = true;
-            } else {
-                banner.classList.remove('is-expanded');
-                banner.classList.add('is-collapsed');
-                if (list) list.style.display = 'none';
-                if (chevron) chevron.textContent = '▾';
-                if (sub) sub.textContent = 'برای مشاهده‌ی جزئیات کلیک کن.';
-                window.__dashConflictExpanded = false;
-            }
-        });
-    }
     const tomorrow = addJalaliDays(t.jy, t.jm, t.jd, 1);
     const in7 = addJalaliDays(t.jy, t.jm, t.jd, 7);
     const in7Key = dateKey(in7.jy, in7.jm, in7.jd);

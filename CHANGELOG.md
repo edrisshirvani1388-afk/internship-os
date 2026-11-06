@@ -1,3 +1,25 @@
+## [1.0.5] - 2026-11-06
+
+### Added
+- Calendar three-view architecture (month / week / list) — Planning tab consolidated into Calendar
+- 16 course colors + 16 course icons (medical emojis) in Study Together picker
+- Focus menu displays course icon next to color dot
+- Kind-aware fallback title for untitled daily-plan items (ADR-111)
+- Cross-source dedup for Study Together daily plan (ADR-112)
+
+### Fixed
+- Calendar week view Saturday-Friday with cross-month navigation
+- Recurring tasks appear in Calendar day panel via canonical projection
+- Day Timeline Persian numerals + working ✓ / ✏️ / 📌 buttons
+- Friends' daily plan advance double-day bug (.currentTarget fix)
+- Friend profile render coalescing (6 renders → 2)
+- Study Together daily plan duplicate entries (5A dedup restored + read-side dedup)
+- Future date navigation enabled (+6 days from today)
+
+### Preserved
+- Schema v22 (no migration)
+- ADR-108/109/110 unaffected
+
 ## [0.6.1] — 2026-10-23 — Study Together V1
 
 ### Added

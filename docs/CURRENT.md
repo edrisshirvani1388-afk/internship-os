@@ -535,3 +535,35 @@ Await Design Agent directive for Wave 4 (Storage/avatar upload، group analytics
 ### Next
 
 Await Design Agent or owner directive for bug fixes (Wave 18).
+
+## Session 2026-11-06 — Agent 35 (Stage 4–6 + Study Together closeout)
+
+## Session 2026-11-06 — Agent 35 (Stage 4–6 + Study Together closeout)
+
+**Status:** pre-release, no commit/tag/release.
+**Schema:** v22 (locked, unchanged).
+
+### Delivered this session
+
+- **Stage 4** — Study Together detach/reattach (`ST.detachView()` + `S._detached`) so leaving the tab stops UI rendering into the shared view while preserving presence/auth/timers.
+- **Stage 5A** — `_stGetDailyPlan` wraps `projectDate(...)` with `_dedupItemsForOverlap(...)` (linked residencyActivity + task → one item).
+- **Stage 5B** — `onClick` target resolution uses `e.currentTarget` (fixes double-handler on nested `[data-st-act]` elements; `‹ ›` in friends' daily plan now advances exactly one day).
+- **Stage 5C** — Course color/icon picker redesigned to swatch/icon grid. 16 colors, 16 icons (medical emojis: 🧠 🫀 💊 🩺 🔬 🧬 💉 👁️). Persian labels, `role="group"` + `aria-pressed`, hidden inputs preserved for `_saveCourse`.
+- **Owner UX additions to Study Together** — hidden Gregorian date input in friend daily plan; nav arrows added to Card #1 «📋 برنامهٔ روزانه»; future navigation enabled up to +6 days; friend profile initial-load render coalescing (`S._profileBatch`).
+- **Stage 6** — Planning tab consolidated into Calendar. Three views: `ماه` / `هفته` / `فهرست`. Header has view toggle + add task/shift/bulk/AI. Top strip has motivation + rotation progress. `#/planner` → `#/calendar` (list). Planner nav removed from header. `.planner-row` CSS retained for `studyRowHTML`.
+- **R1** — Day Timeline widget: Persian time formatting (`_faTime`), working `✓`/`✏️`/`📌` buttons via delegated wiring (`_wireTimelineActions` after `dayTimeline.render` + `setTimeout` fallback), cleaner `dt20-*` styling. Removed the vertical connector line (`#cal-day-timeline .dt20-timeline::before`), preserved the numbered circles and ▼ arrows.
+- **R2** — `tasksOnDate()` rewritten to use `_getEffectiveItems(dateKey)` (canonical projection + dedup) with virtual-occurrence mapping; recurring tasks now appear in the day panel with correct `recurrenceExceptions`.
+- **ST Daily Plan** — `_stGetDailyPlan` now uses `_dedupItemsForOverlap` (5A restored), plus `_stPlanFallbackTitle` (kind-aware, e.g. «مطالعه — 14:00») and `_stPlanDisplayTitle` (read-side fallback for previously-published data). `_stPlanDedup` removes duplicate-shaped entries (same start/end/mins/kind) when one has a real title and the other is the fallback.
+
+### Preserved from earlier sessions
+
+- Food DB `_rendering` guard, Finance sort, S1–S4, meal-item edit, Study Together F1/F2, ADR-108/109/110.
+
+### Test status
+
+- 156/156 existing project tests (schedulingProjection 37, dayTimeline 12, schedulingConflict 48, replanTrigger 43, plannerReplanApply 16).
+- Manual verification of all Stage 4–6 paths by owner (except where noted in KNOWN_ISSUES).
+
+### Open
+
+- See `KNOWN_ISSUES.md` for residual items (network-dependent tests, pre-existing behavior).

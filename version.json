@@ -1,16 +1,16 @@
 {
-    "highlights":  [
-                       "Fix recurring task toggle in timeline and checkbox (double-toggle bug).",
-                       "Add 7-day bell notifications for meals, sleep, naps, workout, finance.",
-                       "Bell items auto-tick corresponding tasks after log.",
-                       "Bell done-task marks the specific occurrence per date.",
-                       "Occurrence-aware overdue count on dashboard (skip completed/skipped occurrences).",
-                       "Calendar week strip excludes skipped occurrences.",
-                       "Finance daily-reminder dismiss works per-date for past days.",
-                       "Schema v22 retained; no database migration."
-                   ],
-    "schema":  22,
-    "version":  "1.0.4",
-    "releasedAt":  "2026-11-06",
-    "notes":  "v1.0.4"
+  "highlights": [
+    "Fix recurring task toggle in timeline and checkbox (double-toggle bug).",
+    "Add 7-day bell notifications for meals, sleep, naps, workout, finance.",
+    "Bell items auto-tick corresponding tasks after log.",
+    "Bell done-task marks the specific occurrence per date.",
+    "Occurrence-aware overdue count on dashboard (skip completed/skipped occurrences).",
+    "Calendar week strip excludes skipped occurrences.",
+    "Finance daily-reminder dismiss works per-date for past days.",
+    "Schema v22 retained; no database migration."
+  ],
+  "schema": 22,
+  "version": "1.0.5",
+  "releasedAt": "2026-11-06",
+  "notes": "v1.0.4"
 }

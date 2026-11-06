@@ -48,6 +48,7 @@
   var timer = null;
   var reqId = 0;
   var catReqId = 0;
+  var _rendering = false;
 
   function open(mealId) {
     S = {
@@ -82,17 +83,22 @@
   }
 
   function renderAll() {
-    if (!S) return;
-    var ov = overlay();
-    var aId = document.activeElement ? document.activeElement.id : null;
-    var s0 = null, s1 = null;
-    if (aId && document.activeElement && document.activeElement.setSelectionRange) {
-      try { s0 = document.activeElement.selectionStart; s1 = document.activeElement.selectionEnd; } catch (x) {}
-    }
-    ov.innerHTML = '<div class="fdb-modal" role="dialog" aria-modal="true">' + body() + '</div>';
-    if (aId) {
-      var el = document.getElementById(aId);
-      if (el) { try { el.focus(); if (s0 != null && el.setSelectionRange) el.setSelectionRange(s0, s1); } catch (x) {} }
+    if (!S || _rendering) return;
+    _rendering = true;
+    try {
+      var ov = overlay();
+      var aId = document.activeElement ? document.activeElement.id : null;
+      var s0 = null, s1 = null;
+      if (aId && document.activeElement && document.activeElement.setSelectionRange) {
+        try { s0 = document.activeElement.selectionStart; s1 = document.activeElement.selectionEnd; } catch (x) {}
+      }
+      ov.innerHTML = '<div class="fdb-modal" role="dialog" aria-modal="true">' + body() + '</div>';
+      if (aId) {
+        var el = document.getElementById(aId);
+        if (el) { try { el.focus(); if (s0 != null && el.setSelectionRange) el.setSelectionRange(s0, s1); } catch (x) {} }
+      }
+    } finally {
+      _rendering = false;
     }
   }
 

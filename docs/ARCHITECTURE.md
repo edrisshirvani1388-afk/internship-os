@@ -1816,3 +1816,76 @@ Critical: render() before reading inputs causes DOM to reset to old state — wr
 - ADR-091..094 + ADR-100..107
 - Server trigger enforce_session_course_owner
 - service_role never in client
+
+## Session 2026-11-06 — Agent 35: Calendar Consolidation + Timeline + Study Together
+
+## Session 2026-11-06 — Agent 35: Calendar Consolidation + Timeline + Study Together
+
+### Calendar — three-view architecture (Stage 6)
+
+The Planning tab was removed from `MAIN_ROUTES`. Calendar now has three mutually exclusive views managed by module-level transient state:
+
+    _calViewMode    = "month" | "week" | "list"   // initial: "month"
+    _pendingCalView = null                          // used to force list from #/planner redirect
+    _calWeekSat     = null                          // cached Saturday for week view
+    _calMotivationCollapsed, _calPlanningCollapsed  // top-strip state
+
+**Helpers added** (all in `app.js`, additive):
+
+    _calOccurrenceDone(t, dKey)         // occurrence-aware done state
+    _buildCalendarWeek(jy, jm, jd)      // Saturday–Friday week builder
+    _planningTaskGroups()               // 5 buckets with area-priority sort
+    _calRowHTML(task)                   // row renderer using .planner-row classes
+    _calGroupHTML(group)                // group + area subgroups
+    _calPlanningSectionHTML()           // list-view block
+    _calMotivationHTML() / _calRotContextHTML()
+    _calMonthViewHTML() / _calWeekViewHTML() / _calWeekShift(delta)
+
+**Canonical task semantics:** all row state and completion uses `_calOccurrenceDone` + `toggleTask()`. The old planner's `task.completed` direct checks are not used in the new Calendar.
+
+**Route redirect:** `#/planner` → `#/calendar` with `_pendingCalView="list"`, handled in `setRoute()`. Dashboard shortcut «برنامه‌ریزی ←» removed; `ROUTES` and `MAIN_ROUTES` no longer contain `"planner"`.
+
+**Timeline `.planner-row` CSS is retained** — `studyRowHTML` (L12371) still emits `<li class="task-row planner-row ...">` and is used by other UIs.
+
+### Day Timeline widget (R1)
+
+`day-timeline-v20.js` fixes:
+
+- `_faTime(t)` converts `"HH:MM"` digit characters to Persian numerals. Applied to `timeStart` and `timeEnd` in `_renderTimedItem`.
+- Action buttons (`✓` / `✏️` / `📌`) rendered inside `.dt20-item-actions` are wired by `app.js::_wireTimelineActions(host)`, called **after** `dayTimeline.render(...)` in `wireCalendarEvents` plus a 120 ms `setTimeout` fallback. Handlers dispatch to `toggleTask(id)` for completion and `openTaskForm(sid)` / `openResidencyActivityTimingModal(sid)` for edit.
+- `.dt20-timeline::before` (the vertical connector line) is suppressed in `#cal-day-timeline` scope only; numbered circles (`.dt20-item::before`) and ▼ arrows (`.dt20-item::after`) remain.
+
+### Recurring tasks in Calendar day panel (R2)
+
+`app.js::tasksOnDate(jy, jm, jd)` is rewritten:
+
+- Source: `_getEffectiveItems(_dateKey)` (canonical projection + dedup) instead of raw `state.tasks.filter(date===...)`.
+- Virtual occurrences: `virtual:<parentId>@<date>` reconstructed with `Object.assign({}, parent, {...})`.
+- Skipped occurrences excluded.
+- Untimed tasks merged with dedup against virtual IDs.
+- Sleep-split merge (`night:evening` filtered, `night:morning` extended) preserved.
+
+### Study Together — daily plan data contract
+
+`_stGetDailyPlan(dateJalali)` (bridge, in `app.js`):
+
+    var items = _dedupItemsForOverlap(
+      R.schedulingProjection.projectDate(st, date, {})
+    );
+
+    // per item:
+    title: real title, or _stPlanFallbackTitle(category, startTime)
+           (e.g. «مطالعه — 14:00») if empty or ADR-031 fallback
+    category, startTime, endTime, durationMinutes, sourceType, role
+
+`study-together.js` reads `_stPlanDisplayTitle(it)` at render time (same fallback, applied to any item regardless of publish age) and passes items through `_stPlanDedup(items)` before rendering in both `_renderFriendPlanHTML` and `_renderSharePlanUI`.
+
+Dedup identity for daily-plan display is **(start, end, mins, kind)** — matching on title alone is explicitly avoided so genuinely distinct activities with the same label remain separate.
+
+### Preserved contracts
+
+- Schema v22 unchanged.
+- `state.tasks` is canonical; Calendar and Timeline remain derived projections.
+- `recurrenceExceptions` per-occurrence completion via `toggleTask` / `_toggleVirtualOccurrence`.
+- `_ioTaskOverdueAt()` is the single overdue classifier.
+- ADR-108/109/110 unaffected.

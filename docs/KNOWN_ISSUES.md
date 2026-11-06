@@ -988,3 +988,34 @@ Next: مالک می‌تواند این query را اجرا کند:
     select count(*) filter (where ended_at is null) as crash_open,
            count(*) filter (where ended_at is not null) as crash_closed
     from study_sessions where end_reason = '"'"'crash'"'"';
+
+
+## Session 2026-11-06 — Agent 35
+
+## Session 2026-11-06 — Agent 35
+
+### ISSUE-ST-10 — Malformed Study Together daily-plan title
+
+**Status:** FIXED (source-verified + owner-confirmed).
+
+**Symptom:** friends' daily plan showed `فعالیت بدون عنوانمطالعه` (concatenation of ADR-031 fallback + kind badge) twice with different durations (60 and 80 minutes) — while the underlying activities were visible with real titles (`QB اطفال ۱ — صفحات 33–44` and `... 45–60`) further down the same list.
+
+**Root cause:** the earlier-published `study_shared_day_plans.items` array contained **both** the `residencyActivity` (untitled → ADR-031 fallback) **and** its linked `task` (with real title). The Stage 5A dedup was present in `_stGetDailyPlan` at some point but was overwritten during subsequent consolidation and had to be restored. Old published rows in Supabase still contain the duplicate pair.
+
+**Fix:**
+- **Write path:** `app.js::_stGetDailyPlan` wraps `projectDate(...)` with `_dedupItemsForOverlap(...)` (5A restored). New publishes contain one item per underlying activity.
+- **Fallback title:** `_stPlanFallbackTitle(category, startTime)` produces a kind-aware label (e.g. «مطالعه — 14:00») instead of the bare ADR-031 string, so untitled items are distinguishable.
+- **Read path:** `study-together.js::_stPlanDisplayTitle(it)` — same fallback applied at render time, so previously published data displays cleanly without requiring a Supabase rewrite.
+- **Read-path dedup:** `study-together.js::_stPlanDedup(items)` removes duplicate-shaped entries (same `start`/`end`/`mins`/`kind`) when one carries a real title and the other is a fallback. Applied in `_renderFriendPlanHTML` and `_renderSharePlanUI`.
+
+**Verification:** friend profile daily plan went from 9 visible items to 7 (2 fallback duplicates removed) while preserving both distinct `QB اطفال ۱` activities. No mutation of original Residency records. Schema v22 unchanged.
+
+### ISSUE-ST-11 — Network-dependent Study Together behavior
+
+**Status:** open (environmental).
+
+`_sharePlanAutoPublish` and authenticated entry can fail with `ERR_HTTP2_PROTOCOL_ERROR` / `ERR_QUIC_PROTOCOL_ERROR` when the client cannot reach the Supabase endpoint. The failure is caught and logged (`[st] share-plan upsert failed`); no data mutation occurs. Not a code defect — depends on network route to `*.supabase.co`. Retained as an operational note, not a blocker.
+
+### ISSUE-CAL-01 — Friend profile rendering races
+
+**Status:** FIXED. Initial profile open now coalesces the three fetch chains via `S._profileBatch` and renders twice instead of six times. Previously observed as visual flicker.

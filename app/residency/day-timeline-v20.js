@@ -15,6 +15,11 @@
 
   function _esc(s) { return LIB && LIB.escapeHTML ? LIB.escapeHTML(s) : String(s == null ? "" : s); }
   function _fa(n) { return LIB && LIB.faNum ? LIB.faNum(n) : String(n); }
+  function _faTime(t) {
+    if (!t || t === "—" || t === "") return t || "";
+    var s = String(t);
+    return s.replace(/[0-9]/g, function (d) { return "۰۱۲۳۴۵۶۷۸۹"[parseInt(d, 10)]; });
+  }
   function _state() { return window.__os && window.__os.getState ? window.__os.getState() : null; }
 
   /* ═══ VIEW MODEL ═══ */
@@ -419,8 +424,8 @@ if (vm.item && vm.item.sourceType === "task" && vm.item.sourceId) {
     else if (catLc === "life" || catLc === "personal") catRGB = "234, 179, 8";
     else if (catLc === "income") catRGB = "34, 197, 94";
 
-    var timeStart = sAttr || "—";
-    var timeEnd = eAttr || "—";
+    var timeStart = _faTime(sAttr) || "—";
+    var timeEnd = _faTime(eAttr) || "—";
 
     var durText = "";
     if (vm.durationMinutes && vm.durationMinutes > 0) {

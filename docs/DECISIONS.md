@@ -2169,3 +2169,66 @@ None new in Wave 15-16 (data reset only). Wave 17 adds `profiles.last_seen_at`.
 - Fresh installs work without manual config (defaults in git)
 - Silent 0-row DB failures now surface as explicit errors
 - Save operations observable in DB after each action
+
+## ADR-111 — Kind-Aware Fallback for Untitled Daily-Plan Items
+
+## ADR-111 — Kind-Aware Fallback for Untitled Daily-Plan Items
+
+**Status:** ACCEPTED
+**Date:** 2026-11-06
+
+**Decision:** When a Study Together daily-plan item has an empty title, or the ADR-031 fallback `"فعالیت بدون عنوان"`, the display label is derived from its category: `study/residency → «مطالعه»`, `clinical → «بالین»`, `review → «مرور»`, `assessment → «آزمون»`, `sleep/rest → «خواب»`, `food → «غذا»`, `body/exercise → «ورزش»`, `life/personal → «زندگی»`, `hospital → «بیمارستان»`, `income → «کار»`. If `startTime` is present it is appended (`«مطالعه — 14:00»`).
+
+**Implementation:**
+- Write path: `app.js::_stPlanFallbackTitle(category, startTime)`
+- Read path: `study-together.js::_stPlanDisplayTitle(it)` (also accepts older entries)
+
+**Rationale:** ADR-031 provides a neutral fallback for untitled residency activities in the canonical projection. That is correct for the projection itself, but the raw Persian string (`فعالیت بدون عنوان`) is unhelpful when rendered as a daily-plan item next to another identical string. A category-derived label preserves the information the user needs (what kind of activity, when) while remaining distinct. ADR-031 is unchanged; the fallback only applies at the Study Together daily-plan presentation layer.
+
+**Non-goals:** Does not mutate `state.residency.activities` or the projection. Does not change how the Calendar or Timeline display untitled items.
+
+---
+
+## ADR-112 — Study Together Daily-Plan Cross-Source Deduplication
+
+**Status:** ACCEPTED
+**Date:** 2026-11-06
+
+**Decision:** Daily-plan items must be deduplicated before display:
+
+1. **Projection-level:** `app.js::_stGetDailyPlan` wraps `schedulingProjection.projectDate(...)` with `_dedupItemsForOverlap(...)` — the same helper used by dashboard conflict paths per ADR-029. This collapses a linked `residencyActivity` + `task` pair to the task item only.
+
+2. **Display-level:** `study-together.js::_stPlanDedup(items)` removes pairs that are identical in `(start, end, mins, kind)` when one has a real title and the other carries the fallback marker. Applied in both `_renderFriendPlanHTML` (friend profile) and `_renderSharePlanUI` (owner preview), so previously published rows that predate this ADR are also corrected visually.
+
+**Identity rule:** matching on **(start, end, mins, kind)** — never on title, date, or duration alone. This preserves genuinely distinct activities that happen to have the same label, the same duration, or both.
+
+**Rationale:** ADR-029 already established that linked activity + task pairs must be collapsed at the projection level for conflict paths. The Study Together daily plan was bypassing that rule since its introduction. Old `study_shared_day_plans` rows written before ADR-112 still contain the duplicates; the read-path dedup corrects display without a Supabase migration.
+
+**Non-goals:** Does not modify Supabase data. Does not deduplicate across different dates. Does not affect non-daily-plan consumers.
+
+---
+
+## ADR-113 — Calendar Consolidation (Planning → Calendar)
+
+**Status:** ACCEPTED
+**Date:** 2026-11-06
+
+**Decision:** The Planning tab is removed as a top-level route. Calendar gains a three-view architecture (`month` / `week` / `list`) where `list` includes the effective capabilities of the old Planning tab.
+
+**Mapping (from Planning):**
+- 5 task groups (overdue/today/tomorrow/this-week/later) — kept verbatim, canonical overdue classifier is `_ioTaskOverdueAt`
+- Area-based grouping — kept
+- Rotation-linked indicator — kept
+- Motivation card + rotation progress — moved to Calendar top strip
+- Add task / shift / bulk shift / AI — moved to Calendar header
+- `#/planner` legacy links → `#/calendar` with `_pendingCalView = "list"`
+
+**Canonical semantics:** All row state and toggle use `_calOccurrenceDone` and `toggleTask`, matching ADR-108. The old planner's `task.completed` direct checks do not carry into the new Calendar.
+
+**Preserved:**
+- `.planner-row` CSS is retained for `studyRowHTML` (L12381) — that function is out of scope.
+- Planner DOM helpers (`plannerGroupHTML`, `plannerRowHTML`, `wirePlannerEvents`) remain in source but are unreachable via route; removal deferred pending a separate cleanup task after the release.
+
+**State:** All new view-mode / collapsed-state flags are module-level transient (`_calViewMode`, `_calMotivationCollapsed`, `_calPlanningCollapsed`, `_pendingCalView`, `_calWeekSat`). No `state.workspace` additions, no Schema v22 change.
+
+**Non-goals:** Does not remove the old planner source. Does not change the Timeline projection or source-of-truth architecture.

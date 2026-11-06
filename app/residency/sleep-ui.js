@@ -489,7 +489,7 @@
   function _renderHistory() { /* PATCH:phase-F7-final */
     var s = _ensure(state());
     var all = (s.sleep.log || []).slice().sort(function(a,b){
-      return window.InternshipLib.date.compareJalaliDate(b, a);
+      return window.InternshipLib.date.compareJalaliDate(b.date, a.date);
     });
     var out = "";
     if (!all.length) {

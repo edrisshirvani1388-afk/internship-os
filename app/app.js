@@ -300,6 +300,35 @@
 
   const STORAGE_KEY = "internship-os.workspace.v2";
 
+  /* PATCH:phase-P5c — occurrence-aware overdue check */
+  function _ioTaskOverdueAt(t, todayKey) {
+    if (!t || !t.date || t.cancelled === true || t._sleepAuto) return false;
+    var _L = window.InternshipLib && window.InternshipLib.date;
+    if (!_L || !_L.addJalaliDays || !_L.jalaliToDayNumber || !_L.parseJalali || !_L.compareJalaliDate) return false;
+    if (!t.recurrence || t.recurrence === "none") {
+      return !t.completed && _L.compareJalaliDate(t.date, todayKey) < 0;
+    }
+    var _p = _L.parseJalali(t.date);
+    var _tp = _L.parseJalali(todayKey);
+    if (!_p || !_tp) return false;
+    var _sn = _L.jalaliToDayNumber(_p.jy, _p.jm, _p.jd);
+    var _tn = _L.jalaliToDayNumber(_tp.jy, _tp.jm, _tp.jd);
+    if (_tn <= _sn) return false;
+    var _step = t.recurrence === "daily" ? 1 : t.recurrence === "weekly" ? 7 : 0;
+    if (_step === 0) return false;
+    var _exc = t.recurrenceExceptions || {};
+    for (var _k = 0; ; _k++) {
+      var _off = _k * _step;
+      if (_sn + _off >= _tn) break;
+      var _d = _L.addJalaliDays(_p.jy, _p.jm, _p.jd, _off);
+      var _key = _d.jy + "/" + _d.jm + "/" + _d.jd;
+      var _s = _exc[_key];
+      if (_s !== "completed" && _s !== "skipped") return true;
+    }
+    return false;
+  }
+
+
   // ─── آدرس سرور محلی ───
   const API_BASE = (location.origin && location.origin.startsWith("http"))
     ? location.origin
@@ -1379,9 +1408,7 @@
       var _todayTotal = state.tasks.filter(function (x) { return x.date === today && !x.cancelled; }).length;
       var _todayDone = state.tasks.filter(function (x) { return x.date === today && x.completed && !x.cancelled; }).length;
       var _todayPend = _todayTotal - _todayDone;
-      var _overdueCount = state.tasks.filter(function (x) {
-        return !x.completed && !x.cancelled && x.date && window.InternshipLib.date.compareJalaliDate(x.date, today) < 0;
-      }).length;
+      var _overdueCount = state.tasks.filter(function (x) { return _ioTaskOverdueAt(x, today); }).length;
 
       var _calToday = 0, _calTarget = 0;
       try {
@@ -1598,7 +1625,11 @@
     for (let i = 0; i < 7; i++) {
       const d = addJalaliDays(_weekBase.jy, _weekBase.jm, _weekBase.jd, i);
       const dKey = dateKey(d.jy, d.jm, d.jd);
-      const dayTasks = state.tasks.filter((x) => x.date === dKey && !x.cancelled);
+      const dayTasks = state.tasks.filter(function(x){
+        if (x.date !== dKey || x.cancelled) return false;
+        if (x.recurrence && x.recurrence !== "none" && x.recurrenceExceptions && x.recurrenceExceptions[dKey] === "skipped") return false;
+        return true;
+      });
       const dayShifts = shiftsOnDate(d.jy, d.jm, d.jd);
       weekStrip.push({
         jy: d.jy, jm: d.jm, jd: d.jd,
@@ -1606,7 +1637,12 @@
         weekday: weekdayName(d.jy, d.jm, d.jd),
         isToday: i === 0,
         total: dayTasks.length,
-        done: dayTasks.filter((x) => x.completed).length,
+        done: dayTasks.filter(function(x){
+          if (x.recurrence && x.recurrence !== "none") {
+            return !!(x.recurrenceExceptions && x.recurrenceExceptions[dKey] === "completed");
+          }
+          return x.completed;
+        }).length,
         shifts: dayShifts.length
       });
     }
@@ -2201,72 +2237,24 @@ function _dashRenderSelectedDate(dateKeyStr) {
   }
 
   function _onTimelineToggleDone(src, sid) {
-    if (src !== "task") return;
-    var t = null;
-    for (var i = 0; i < state.tasks.length; i++) {
-      if (state.tasks[i].id === sid) { t = state.tasks[i]; break; }
-    }
-    if (!t) return;
-    t.completed = !t.completed && !t.cancelled;
-    if (t.recurrence && t.recurrence !== "none" && !t.completed) {
-      _openRecurrenceScopeModal("تسک تکرارشونده: کدام وقوع تیک بخورد؟", function(scope) {
-        if (scope === "cancel") return;
-        if (scope === "this") {
-          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
-          t.recurrenceExceptions[t.date] = "completed";
-          t.updatedAt = Date.now();
-          saveState(); render();
-          return;
-        }
-        if (scope === "thisAndNext") {
-          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
-          t.recurrenceExceptions[t.date] = "completed";
-          var _lib = window.InternshipLib && window.InternshipLib.date;
-          if (_lib && _lib.parseJalali && _lib.addJalaliDays && _lib.dateKey) {
-            var p = _lib.parseJalali(t.date);
-            var prev = _lib.addJalaliDays(p.jy, p.jm, p.jd, -1);
-            t.recurrenceEnd = _lib.dateKey(prev.jy, prev.jm, prev.jd);
-          }
-          t.updatedAt = Date.now();
-          saveState(); render();
-          return;
-        }
-        if (scope === "all") {
-          t.completed = true;
-          t.updatedAt = Date.now();
-          if (_rtIsRelevantTask(t)) _rtNotify("task_completed", { id: t.id, date: t.date, sourceType: "task", title: t.title });
-          saveState(); render();
-        }
-      });
-      return;
-    }
-
-    const wasCompleted = t.completed;
-    t.completed = !t.completed && !t.cancelled;
-    t.updatedAt = Date.now();
-    if (_rtIsRelevantTask(t)) _rtNotify(t.completed ? "task_completed" : "task_updated", { id: t.id, date: t.date, sourceType: "task", title: t.title });
-    try {
-      if (window.InternshipResidency && window.InternshipResidency.taskProjection) {
-        window.InternshipResidency.taskProjection.onTaskCompleted(sid);
-      }
-    } catch (e) {}
-    try {
-      if (window.InternshipResidency && window.InternshipResidency.reviewIntegration) {
-        window.InternshipResidency.reviewIntegration.onTaskCompleted(sid);
-      }
-    } catch (e) {}
-    saveState();
-    // Full day section re-render (timeline + day-bar + now/next + windows)
-    try {
-      var _c = _dashSelectedDay || todayJalali();
-      _dashRenderSelectedDate(_c);
-    } catch (e) {
-      console.warn("[toggle re-render]", e);
-      var host = document.getElementById("dash-timeline");
-      var cur = _dashSelectedDay || todayJalali();
-      if (host) _renderDashTimeline(host, cur);
-    }
+  if (src !== "task") return;
+  var cleanId = sid;
+  if (typeof cleanId === "string" && cleanId.indexOf("task:") === 0) {
+    cleanId = cleanId.replace("task:", "");
   }
+  var t = null;
+  for (var i = 0; i < state.tasks.length; i++) {
+    if (state.tasks[i].id === cleanId) { t = state.tasks[i]; break; }
+  }
+  if (!t) return;
+  if (t.recurrence && t.recurrence !== "none") {
+    var occDate = _dashSelectedDay || todayJalali();
+    toggleTask("virtual:" + cleanId + "@" + occDate);
+  } else {
+    toggleTask(cleanId);
+  }
+}
+
 
   function _onTimelineEdit(src, sid) {
     if (src === "task") {
@@ -3642,6 +3630,36 @@ function _dashRenderSelectedDate(dateKeyStr) {
       var catCls = _isResidencyLinkedItem(it) ? "is-residency" : _dashCatClass(it.category, it.role, it.sourceType, it.catHint, it.title);
       var cls = "dash-daybar-block " + catCls;
       var _isDone = (it.status === "completed" || it.status === "done");
+if (it.sourceType === "task" || it.sourceType === "manual") {
+  try {
+    var _rtA = state.tasks.find(function(x){ return x.id === it.sourceId; });
+    if (_rtA) {
+      if (_rtA.recurrence && _rtA.recurrence !== "none") {
+        _isDone = false;
+        var _cdA = it.occurrenceDate || it.date;
+        if (_cdA && _rtA.recurrenceExceptions && _rtA.recurrenceExceptions[_cdA] === "completed") _isDone = true;
+      } else {
+        _isDone = !!_rtA.completed;
+      }
+    }
+  } catch(e) {}
+}
+      if (!_isDone && (it.sourceType === "task" || it.sourceType === "manual")) {
+        try {
+          var _rt = state.tasks.find(function(x){ return x.id === it.sourceId; });
+          if (_rt) {
+            if (_rt.recurrence && _rt.recurrence !== "none") {
+              /* recurring: parent.completed ignore */
+            } else if (_rt.completed) {
+              _isDone = true;
+            }
+            if (_rt.recurrenceExceptions) {
+              var _cd = it.occurrenceDate || it.date;
+              if (_cd && _rt.recurrenceExceptions[_cd] === "completed") _isDone = true;
+            }
+          }
+        } catch(e) {}
+      }
       if (_isDone) cls += " is-completed";
       if (isDirty) cls += " is-dirty";
       /* PATCH:phase-F7-split5 — continuation arrows for sleep */
@@ -5897,217 +5915,343 @@ function _dayTotals(s, date) {
   function _updateMealReminder() { /* deprecated — replaced by _updateDashBell */ }
 
 function _dashNotificationsList() {
-    var out = [];
-    try {
-      var meals = _mealReminderList();
-      for (var i = 0; i < meals.length; i++) {
-        out.push({
-          kind: "meal", icon: meals[i].icon,
-          title: meals[i].label + " ثبت نشده",
-          sub: "ساعت " + meals[i].time + " گذشته",
-          meal: meals[i].id
-        });
+  var out = [];
+  try {
+    var today = todayJalali();
+    var tP = parseJalali(today);
+    if (!tP) return out;
+    var nowD = new Date();
+    var nowMin = nowD.getHours() * 60 + nowD.getMinutes();
+    var DAYS = 7;
+    var covered = {};
+    function offset(k) {
+      var d = addJalaliDays(tP.jy, tP.jm, tP.jd, -k);
+      return { jy: d.jy, jm: d.jm, jd: d.jd, key: d.jy + "/" + d.jm + "/" + d.jd };
+    }
+    function faDate(k) {
+      var p = parseJalali(k); if (!p) return k;
+      var M = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
+      var fa = function(n){ return String(n).replace(/\d/g, function(c){ return "۰۱۲۳۴۵۶۷۸۹"[parseInt(c,10)]; }); };
+      return fa(p.jd) + " " + M[p.jm-1];
+    }
+    var MEALS = [
+      { id: "breakfast", rx: /صبحانه/, label: "صبحانه", icon: "🍳" },
+      { id: "lunch", rx: /ناهار|نهار/, label: "ناهار", icon: "🍲" },
+      { id: "dinner", rx: /شام/, label: "شام", icon: "🍽️" }
+    ];
+    function findMealTask(rx) {
+      var list = (state.tasks || []).filter(function(t){ return t && t.areaId === "food" && t.title && rx.test(t.title) && t.time && t.cancelled !== true; });
+      return list[0] || null;
+    }
+    function occursOn(t, key) {
+      var rec = t.recurrence || "none";
+      if (rec === "none") return t.date === key;
+      if (window.InternshipLib.date.compareJalaliDate(t.date, key) > 0) return false;
+      if (rec === "daily") return true;
+      var st = parseJalali(t.date), td = parseJalali(key);
+      if (!st || !td) return false;
+      if (rec === "weekly") {
+        var a = st.jy*365 + st.jm*30 + st.jd;
+        var b = td.jy*365 + td.jm*30 + td.jd;
+        return ((b-a) % 7) === 0;
       }
-    } catch (e) {}
-    try {
-      var today = todayJalali();
-      var od = (state.tasks || []).filter(function (t) { /* PATCH:phase-F7-arrow2 */
-        if (!t || t.completed || t.cancelled === true || !t.date || window.InternshipLib.date.compareJalaliDate(t.date, today) >= 0) return false;
-        if (t._sleepAuto) return false;
-        return true;
-      });
-      od.sort(function (a, b) { return window.InternshipLib.date.compareJalaliDate(a, b); });
-      /* PATCH:phase-F6-b5 bell-workout */
+      if (rec === "monthly") return st.jd === td.jd;
+      return false;
+    }
+    function occDone(t, key) {
+      if (t.recurrence && t.recurrence !== "none") {
+        return !!(t.recurrenceExceptions && t.recurrenceExceptions[key] === "completed");
+      }
+      return !!t.completed;
+    }
+    function hasMealLog(key, mid) {
+      var L = (state.health && state.health.foodLog) || [];
+      return L.some(function(l){ return l && l.date === key && l.meal === mid && l.items && l.items.length > 0; });
+    }
+    function hasSleepLog(key, kind) {
+      var L = (state.sleep && state.sleep.log) || [];
+      return L.some(function(l){ return l && l.date === key && l.kind === kind; });
+    }
+    function hasWorkoutLog(key) {
+      var L = (state.health && state.health.workoutLog) || [];
+      return L.some(function(l){ return l && l.date === key; });
+    }
+    function hasTxn(key) {
+      var L = (state.finance && state.finance.transactions) || [];
+      return L.some(function(t){ return t && t.date === key; });
+    }
+    function wdIndex(jy,jm,jd) {
       try {
-        var nowD = new Date();
-        var nowMin = nowD.getHours() * 60 + nowD.getMinutes();
-        var wTasks = (state.tasks || []).filter(function (t) {
-          if (!t || t.completed || t.cancelled === true) return false;
-          if (t.date !== today) return false;
-          if (t.areaId !== "body" && t.taskType !== "exercise") return false;
-          if (!t.time) return false;
-          var pp = String(t.time).split(":");
-          if (pp.length !== 2) return false;
-          var tm = parseInt(pp[0], 10) * 60 + parseInt(pp[1], 10);
-          if (!isFinite(tm)) return false;
-          return nowMin >= tm + 15;
-        });
-        for (var wk = 0; wk < Math.min(wTasks.length, 3); wk++) {
-          var wt = wTasks[wk];
-          var log = (state.health && Array.isArray(state.health.workoutLog)) ? state.health.workoutLog : [];
-          var loggedToday = log.some(function (e) { return e && e.date === today; });
-          if (loggedToday) break;
-          out.push({
-            kind: "workout", icon: "🏋️",
-            title: "ورزش ثبت نشده",
-            sub: (wt.title || "جلسه ورزشی") + " — ساعت " + wt.time + " گذشته",
-            taskId: wt.id,            /* PATCH:phase-F6-bellfix */
-            workoutTaskId: wt.id
-          });
+        var name = weekdayName(jy,jm,jd);
+        var m = {"شنبه":0,"یکشنبه":1,"یک‌شنبه":1,"دوشنبه":2,"سه‌شنبه":3,"چهارشنبه":4,"پنجشنبه":5,"پنج‌شنبه":5,"جمعه":6};
+        return m[name] !== undefined ? m[name] : null;
+      } catch(e) { return null; }
+    }
+    for (var k=0; k<=DAYS; k++) {
+      var day = offset(k);
+      var key = day.key;
+      var isToday = (k === 0);
+      for (var mi=0; mi<MEALS.length; mi++) {
+        var m = MEALS[mi];
+        var t = findMealTask(m.rx);
+        if (!t) continue;
+        if (!occursOn(t, key)) continue;
+        if (occDone(t, key)) continue;
+        if (hasMealLog(key, m.id)) continue;
+        if (isToday) {
+          var tp = String(t.time).split(":");
+          var tm = tp.length===2 ? parseInt(tp[0],10)*60 + parseInt(tp[1],10) : 0;
+          if (nowMin < tm + 5) continue;
         }
-      } catch (e) {}
-      /* PATCH:phase-F7-bell-sleep */
-      try {
-        var _h = (new Date()).getHours();
-        if (_h >= 6 && _h < 13) {
-          if (!state.sleep) state.sleep = {};
-          if (!Array.isArray(state.sleep.log)) state.sleep.log = [];
-          var _todayK = todayJalali();
-          var _hasNight = state.sleep.log.some(function (e) { return e && e.kind === "night" && e.date === _todayK; });
-          if (!_hasNight) {
-            out.push({
-              kind: "sleep", icon: "🌙",
-              title: "خواب دیشب ثبت نشده",
-              sub: "ساعت خواب و بیداری واقعی را ثبت کن"
-            });
-          }
-        }
-      } catch (e) {}
-      for (var k = 0; k < Math.min(od.length, 5); k++) {
-        if (od[k].areaId === "sleep") { /* PATCH:phase-F7-belllog */
-          /* skip if a sleep log already exists for that date */
-          var _hasLog = (state.sleep && Array.isArray(state.sleep.log)) ? state.sleep.log.some(function(e){ return e && e.kind === "night" && e.date === od[k].date; }) : false;
-          if (_hasLog) { continue; }
-          out.push({
-            kind: "sleep", icon: "🌙",
-            title: "خواب ثبت نشده",
-            sub: od[k].title + " — " + od[k].date,
-            date: od[k].date,
-            taskId: od[k].id
-          });
+        covered[t.id] = true;
+        out.push({ kind: "meal", icon: m.icon, title: m.label + " ثبت نشده", sub: (isToday ? "ساعت " + t.time + " گذشته" : faDate(key)), meal: m.id, date: key, taskId: t.id });
+      }
+      if (!hasSleepLog(key, "night")) {
+        if (isToday) {
+          var h = nowD.getHours();
+          if (h >= 6 && h < 13) out.push({ kind: "sleep", icon: "🌙", title: "خواب دیشب ثبت نشده", sub: faDate(key), date: key });
         } else {
-          out.push({
-            kind: "task", icon: "⏰",
-            title: "کار عقب‌افتاده",
-            sub: od[k].title + " — " + od[k].date,
-            taskId: od[k].id
-          });
+          out.push({ kind: "sleep", icon: "🌙", title: "خواب شب ثبت نشده", sub: faDate(key), date: key });
         }
       }
-    } catch (e) {}
-        try {
-      /* PATCH:phase-F8-bell-project */
-      var _tdP = parseJalali(todayJalali());
-      if (_tdP && typeof jalaliToDayNumber === "function") {
-        var _tdNum = jalaliToDayNumber(_tdP.jy, _tdP.jm, _tdP.jd);
-        var _projL = (state.projects || []).filter(function (p) { return p && p.status === "active" && p.deadline; });
-        for (var _pjI = 0; _pjI < _projL.length; _pjI++) {
-          var _pj = _projL[_pjI];
-          var _dp = parseJalali(_pj.deadline);
-          if (!_dp) continue;
-          var _daysLeft = jalaliToDayNumber(_dp.jy, _dp.jm, _dp.jd) - _tdNum;
-          if (_daysLeft > 3) continue;
-          if (_daysLeft < -30) continue;
-          var _sub;
-          if (_daysLeft < 0) { _sub = "مهلت گذشته: " + _pj.deadline + " — " + faNum(-_daysLeft) + " روز پیش"; }
-          else if (_daysLeft === 0) { _sub = "مهلت: امروز"; }
-          else { _sub = "مهلت: " + _pj.deadline + " — " + faNum(_daysLeft) + " روز"; }
-          out.push({
-            kind: "project-deadline", icon: "💻",
-            title: "پروژه: " + _pj.title,
-            sub: _sub,
-            taskId: _pj.id,
-            overdue: _daysLeft < 0
-          });
+      var nsc = state.sleep && state.sleep.schedule && state.sleep.schedule.nap;
+      if (nsc && nsc.enabled && Array.isArray(nsc.weekdays)) {
+        var wi2 = wdIndex(day.jy, day.jm, day.jd);
+        if (wi2 !== null && nsc.weekdays[wi2] && !hasSleepLog(key, "nap")) {
+          var ntime = String(nsc.time || "14:00").split(":");
+          var nm = ntime.length===2 ? parseInt(ntime[0],10)*60 + parseInt(ntime[1],10) : 840;
+          if (!isToday || nowMin >= nm + 5) out.push({ kind: "nap", icon: "💤", title: "چرت ثبت نشده", sub: faDate(key), date: key });
         }
       }
-    } catch (e) {}
-    try {
-      /* PATCH:phase-F91k-finance-reminder */
-      var _FR = window.InternshipResidency && window.InternshipResidency.financeUI;
-      if (_FR && typeof _FR.isDailyReminderOn === "function" && _FR.isDailyReminderOn()) {
-        if (typeof _FR.hasTxnToday === "function" && !_FR.hasTxnToday()) {
-          if (typeof _FR.isReminderWindowActive === "function" && _FR.isReminderWindowActive() && !(typeof _FR.isDismissedToday === "function" && _FR.isDismissedToday())) {
-            out.push({
-              kind: "finance-daily", icon: "💰",
-              title: "ثبت تراکنش‌های امروز",
-              sub: "امروز هیچ درآمد/هزینه‌ای ثبت نکردی"
-            });
+      var wts = (state.tasks || []).filter(function(t){ return t && t.cancelled !== true && (t.areaId === "body" || t.taskType === "exercise") && t.time; });
+      for (var wi=0; wi<wts.length; wi++) {
+        var wt = wts[wi];
+        if (!occursOn(wt, key)) continue;
+        if (occDone(wt, key)) continue;
+        if (hasWorkoutLog(key)) continue;
+        if (isToday) {
+          var wtp = String(wt.time).split(":");
+          var wtm = wtp.length===2 ? parseInt(wtp[0],10)*60 + parseInt(wtp[1],10) : 0;
+          if (nowMin < wtm + 15) continue;
+        }
+        covered[wt.id] = true;
+        out.push({ kind: "workout", icon: "🏋️", title: "ورزش ثبت نشده", sub: (wt.title||"جلسه") + " — " + faDate(key), date: key, taskId: wt.id, workoutTaskId: wt.id });
+      }
+      var fs = state.finance && state.finance.settings;
+      var _dismap = (fs && fs.dismissedDates) ? fs.dismissedDates : {};
+      if (fs && fs.dailyReminder && !hasTxn(key) && !_dismap[key]) {
+        if (!isToday) out.push({ kind: "finance-daily", icon: "💰", title: "حساب‌وکتاب ثبت نشده", sub: faDate(key), date: key });
+        else {
+          var FR = window.InternshipResidency && window.InternshipResidency.financeUI;
+          if (FR && typeof FR.isReminderWindowActive === "function" && FR.isReminderWindowActive() && !(typeof FR.isDismissedToday === "function" && FR.isDismissedToday())) {
+            out.push({ kind: "finance-daily", icon: "💰", title: "ثبت تراکنش‌های امروز", sub: "امروز هیچ درآمد/هزینه‌ای ثبت نکردی", date: key });
           }
         }
       }
-    } catch (e) {}
-return out;
-  }
+    }
+    var od = (state.tasks || []).filter(function(t){
+      if (!t || t.cancelled === true || !t.date) return false;
+      if (t._sleepAuto) return false;
+      if (covered[t.id]) return false;
+      if (t.areaId === "food" || t.areaId === "sleep" || t.areaId === "body") return false;
+      return _ioTaskOverdueAt(t, today);
+    });
+    od.sort(function(a,b){ return window.InternshipLib.date.compareJalaliDate(a, b); });
+    for (var oi=0; oi<Math.min(od.length, 10); oi++) {
+      out.push({ kind: "task", icon: "⏰", title: "کار عقب‌افتاده", sub: (od[oi].title||"") + " — " + faDate(od[oi].date), taskId: od[oi].id, date: od[oi].date });
+    }
+    try {
+      var _tdNum = jalaliToDayNumber(tP.jy, tP.jm, tP.jd);
+      var _projL = (state.projects || []).filter(function(p){ return p && p.status==="active" && p.deadline; });
+      for (var pj=0; pj<_projL.length; pj++) {
+        var _pj = _projL[pj];
+        var _dp = parseJalali(_pj.deadline);
+        if (!_dp) continue;
+        var _dl = jalaliToDayNumber(_dp.jy, _dp.jm, _dp.jd) - _tdNum;
+        if (_dl > 3 || _dl < -30) continue;
+        var _sub2 = _dl < 0 ? "مهلت گذشته: " + _pj.deadline + " — " + faNum(-_dl) + " روز پیش" : _dl === 0 ? "مهلت: امروز" : "مهلت: " + _pj.deadline + " — " + faNum(_dl) + " روز";
+        out.push({ kind: "project-deadline", icon: "💻", title: "پروژه: " + _pj.title, sub: _sub2, taskId: _pj.id, overdue: _dl < 0 });
+      }
+    } catch(e) {}
+    out.sort(function(a, b) {
+      var aD = a.date || "9999/99/99";
+      var bD = b.date || "9999/99/99";
+      if (aD === bD) return 0;
+      return window.InternshipLib.date.compareJalaliDate(bD, aD);
+    });
+  } catch(e) { try { console.warn("[bell-list]", e); } catch(x) {} }
+  return out;
+}
+
 
   function _dashBellHandleClick(e) {
-    var el = e.target;
-    if (!el || !el.closest) return;
-    var actBtn = el.closest("[data-act]");
-    var host = el.closest("[data-kind]");
-    if (!actBtn || !host) return;
-    var act = actBtn.getAttribute("data-act");
-    var kind = host.getAttribute("data-kind");
-    try {
-      if (act === "open-meal") {
-        var mealId = host.getAttribute("data-meal");
-        _healthTab = "nutrition";
-        _nutritionSubTab = "today";
-        _nutritionViewDate = null;
-        renderAreaDetail("body");
-        setTimeout(function () {
-          if (window.InternshipResidency && window.InternshipResidency.fooddbUI) window.InternshipResidency.fooddbUI.open(mealId);
-        }, 250);
-      } else if (act === "open-sleep") {
-        /* PATCH:phase-F7-bellsleep */
-        var _sleepDate = host.getAttribute("data-date") || null;
-        try { setRoute("area-detail", "sleep"); } catch (e) {}
-        setTimeout(function () {
-          var _ui = window.InternshipResidency && window.InternshipResidency.sleepUI;
-          if (_ui && _ui.openForm) _ui.openForm("night", _sleepDate);
-        }, 260);
-      } else if (act === "open-workout") {
-        _healthTab = "workout";
-        _workoutSubTab = "today";
-        _workoutViewDate = null;
-        renderAreaDetail("body");
-        setTimeout(function () {
-          if (window.InternshipResidency && window.InternshipResidency.workoutdbUI) window.InternshipResidency.workoutdbUI.open({ tab: "search", focusSearch: true });
-        }, 250);
-            } else if (act === "dismiss-finance") {
-        try {
+  var el = e.target;
+  if (!el || !el.closest) return;
+  var actBtn = el.closest("[data-act]");
+  var host = el.closest("[data-kind]");
+  if (!actBtn || !host) return;
+  var act = actBtn.getAttribute("data-act");
+  var kind = host.getAttribute("data-kind");
+  var dateKey = host.getAttribute("data-date") || null;
+  var taskId = host.getAttribute("data-task") || null;
+  function autoTickMeal(mid, key, tid) {
+    var _poll = setInterval(function() {
+      try {
+        var logs = (state.health && state.health.foodLog) || [];
+        var added = logs.some(function(l){ return l && l.date === key && l.meal === mid && l.items && l.items.length > 0; });
+        if (!added) return;
+        clearInterval(_poll);
+        var t = (state.tasks || []).find(function(x){ return x.id === tid; });
+        if (!t) return;
+        if (t.recurrence && t.recurrence !== "none") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[key] = "completed";
+        } else { t.completed = true; }
+        t.updatedAt = Date.now();
+        try { saveState(); } catch(e){}
+        try { _updateDashBell(); } catch(e){}
+      } catch(e){}
+    }, 500);
+    setTimeout(function(){ clearInterval(_poll); }, 60000);
+  }
+  function autoTickSleep(key, kindName) {
+    var _poll = setInterval(function() {
+      try {
+        var L = (state.sleep && state.sleep.log) || [];
+        var added = L.some(function(l){ return l && l.date === key && l.kind === kindName; });
+        if (!added) return;
+        clearInterval(_poll);
+        var rx = kindName === "nap" ? /چرت/ : /خواب/;
+        var t = (state.tasks || []).find(function(x){ return x && x.areaId === "sleep" && rx.test(x.title||"") && !x._sleepAuto; });
+        if (!t) return;
+        if (t.recurrence && t.recurrence !== "none") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[key] = "completed";
+        } else { t.completed = true; }
+        t.updatedAt = Date.now();
+        try { saveState(); } catch(e){}
+        try { _updateDashBell(); } catch(e){}
+      } catch(e){}
+    }, 500);
+    setTimeout(function(){ clearInterval(_poll); }, 60000);
+  }
+  function autoTickWorkout(key, tid) {
+    var _poll = setInterval(function() {
+      try {
+        var L = (state.health && state.health.workoutLog) || [];
+        var added = L.some(function(l){ return l && l.date === key; });
+        if (!added) return;
+        clearInterval(_poll);
+        if (!tid) return;
+        var t = (state.tasks || []).find(function(x){ return x.id === tid; });
+        if (!t) return;
+        if (t.recurrence && t.recurrence !== "none") {
+          if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+          t.recurrenceExceptions[key] = "completed";
+        } else { t.completed = true; }
+        t.updatedAt = Date.now();
+        try { saveState(); } catch(e){}
+        try { _updateDashBell(); } catch(e){}
+      } catch(e){}
+    }, 500);
+    setTimeout(function(){ clearInterval(_poll); }, 60000);
+  }
+  try {
+    if (act === "open-meal") {
+      var mealId = host.getAttribute("data-meal");
+      _healthTab = "nutrition";
+      _nutritionSubTab = "today";
+      _nutritionViewDate = dateKey || null;
+      renderAreaDetail("body");
+      setTimeout(function () {
+        if (window.InternshipResidency && window.InternshipResidency.fooddbUI) {
+          window.InternshipResidency.fooddbUI.open(mealId);
+          if (taskId && dateKey) autoTickMeal(mealId, dateKey, taskId);
+        }
+      }, 250);
+    } else if (act === "open-sleep") {
+      try { setRoute("area-detail", "sleep"); } catch (e) {}
+      setTimeout(function () {
+        var _ui = window.InternshipResidency && window.InternshipResidency.sleepUI;
+        if (_ui && _ui.openForm) _ui.openForm("night", dateKey);
+        if (dateKey) autoTickSleep(dateKey, "night");
+      }, 260);
+    } else if (act === "open-nap") {
+      try { setRoute("area-detail", "sleep"); } catch (e) {}
+      setTimeout(function () {
+        var _ui = window.InternshipResidency && window.InternshipResidency.sleepUI;
+        if (_ui && _ui.openForm) _ui.openForm("nap", dateKey);
+        if (dateKey) autoTickSleep(dateKey, "nap");
+      }, 260);
+    } else if (act === "open-workout") {
+      _healthTab = "workout";
+      _workoutSubTab = "today";
+      _workoutViewDate = dateKey || null;
+      renderAreaDetail("body");
+      setTimeout(function () {
+        if (window.InternshipResidency && window.InternshipResidency.workoutdbUI) {
+          window.InternshipResidency.workoutdbUI.open({ tab: "search", focusSearch: true });
+          if (taskId && dateKey) autoTickWorkout(dateKey, taskId);
+        }
+      }, 250);
+    } else if (act === "dismiss-finance") {
+      try {
+        if (!state.finance) state.finance = {};
+        if (!state.finance.settings) state.finance.settings = {};
+        if (!state.finance.settings.dismissedDates) state.finance.settings.dismissedDates = {};
+        if (dateKey) {
+          state.finance.settings.dismissedDates[dateKey] = true;
+          try { saveState(); } catch(e){}
+        } else {
           var _FR2 = window.InternshipResidency && window.InternshipResidency.financeUI;
           if (_FR2 && typeof _FR2.dismissDailyReminder === "function") _FR2.dismissDailyReminder();
-        } catch (e) {}
-        try { _updateDashBell(); } catch (e) {}
-      } else if (act === "open-finance") {
+        }
+      } catch (e) {}
+      try { _updateDashBell(); } catch (e) {}
+    } else if (act === "open-finance") {
+      try { setRoute("area-detail", "income"); } catch (e) {}
+    } else if (act === "open-project") {
+      if (taskId) {
         try { setRoute("area-detail", "income"); } catch (e) {}
         setTimeout(function () {
-          try {
-            var _PU = window.InternshipResidency && window.InternshipResidency.projectsUI;
-            if (_PU && typeof _PU.openTab === "function") _PU.openTab(view, "finance");
-          } catch (e2) {}
+          var _PU = window.InternshipResidency && window.InternshipResidency.projectsUI;
+          if (_PU && typeof _PU.openDetail === "function") {
+            try { _PU.openDetail(view, taskId); } catch (e2) {}
+          }
         }, 140);
-      } else if (act === "open-project") {
-        var _bellPid = host.getAttribute("data-task");
-        if (_bellPid) {
-          try { setRoute("area-detail", "income"); } catch (e) {}
-          setTimeout(function () {
-            var _PU = window.InternshipResidency && window.InternshipResidency.projectsUI;
-            if (_PU && typeof _PU.openDetail === "function") {
-              try { _PU.openDetail(view, _bellPid); } catch (e2) {}
-            }
-          }, 140);
-        }
-} else if (act === "edit-task") {
-        var taskId = host.getAttribute("data-task");
-        if (taskId && typeof openTaskForm === "function") openTaskForm(taskId);
-      } else if (act === "done-task") {
-        var tid = host.getAttribute("data-task");
-        if (!tid) return;
-        var t = (state.tasks || []).find(function (x) { return x.id === tid; });
-        if (!t) return;
+      }
+    } else if (act === "edit-task") {
+      if (taskId && typeof openTaskForm === "function") openTaskForm(taskId);
+    } else if (act === "done-task") {
+      if (!taskId) return;
+      var t = (state.tasks || []).find(function (x) { return x.id === taskId; });
+      if (!t) return;
+      if (t.recurrence && t.recurrence !== "none" && dateKey) {
+        if (!t.recurrenceExceptions) t.recurrenceExceptions = {};
+        t.recurrenceExceptions[dateKey] = "completed";
+        t.updatedAt = Date.now();
+        try { saveState(); } catch (e2) {}
+        _notifyApp("success", "«" + (t.title || "کار") + "» برای " + dateKey + " انجام شد");
+      } else {
         t.completed = true;
         t.updatedAt = Date.now();
         try { saveState(); } catch (e2) {}
         _notifyApp("success", "«" + (t.title || "کار") + "» انجام شد");
-        _updateDashBell();
-        if (typeof renderDashboard === "function" && typeof route !== "undefined" && route === "dashboard") {
-          try { render(); } catch (e3) {}
-        }
       }
-    } catch (err) { try { console.warn("[dash-bell-click]", err); } catch (x) {} }
-  }
+      _updateDashBell();
+      try {
+        if (typeof _dashSelectedDay !== "undefined" && typeof _dashRenderSelectedDate === "function") {
+          var _curDay = _dashSelectedDay || todayJalali();
+          _dashRenderSelectedDate(_curDay);
+        }
+        if (typeof render === "function" && typeof route !== "undefined" && route === "dashboard") {
+          render();
+        }
+      } catch(e3) {}
+    }
+  } catch (err) { try { console.warn("[dash-bell-click]", err); } catch (x) {} }
+}
+
 
 function _updateDashBell() {
     try {
@@ -6139,15 +6283,21 @@ function _updateDashBell() {
         html += '<div class="db-item-body"><span class="db-item-title">' + it.title + '</span><span class="db-item-sub">' + it.sub + '</span></div>';
         if (kind === "meal") {
           html += '<button class="db-act db-act-open" type="button" data-act="open-meal" title="ثبت وعده">ثبت ›</button>';
+          if (it.taskId) html += '<button class="db-act db-act-done" type="button" data-act="done-task" title="انجام شد">✓</button>';
         } else if (kind === "task") {
           html += '<button class="db-act db-act-edit" type="button" data-act="edit-task" title="ویرایش">✏️</button>';
           html += '<button class="db-act db-act-done" type="button" data-act="done-task" title="انجام شد">✓</button>';
         } else if (kind === "sleep") {
           /* PATCH:phase-F7-bell-sleep */
           html += '<button class="db-act db-act-open" type="button" data-act="open-sleep" title="ثبت خواب">ثبت ›</button>';
+          if (it.taskId) html += '<button class="db-act db-act-done" type="button" data-act="done-task" title="انجام شد">✓</button>';
+        } else if (kind === "nap") {
+          html += '<button class="db-act db-act-open" type="button" data-act="open-nap" title="ثبت چرت">ثبت ›</button>';
         } else if (kind === "workout") {
           /* PATCH:phase-F6-bellfix */
-          html += '<button class="db-act db-act-open" type="button" data-act="open-workout" title="ثبت جلسه">ثبت ›</button>';        } else if (kind === "project-deadline") {
+          html += '<button class="db-act db-act-open" type="button" data-act="open-workout" title="ثبت جلسه">ثبت ›</button>';
+          if (it.taskId) html += '<button class="db-act db-act-done" type="button" data-act="done-task" title="انجام شد">✓</button>';
+        } else if (kind === "project-deadline") {
           html += '<button class="db-act db-act-open" type="button" data-act="open-project" title="باز کردن">باز ›</button>';        } else if (kind === "finance-daily") {
           html += '<button class="db-act db-act-open" type="button" data-act="open-finance" title="رفتن به حسابداری">ثبت ›</button>';
           html += '<button class="db-act db-act-dismiss" type="button" data-act="dismiss-finance" title="برای امروز نشان نده">🔕</button>';
@@ -7318,7 +7468,12 @@ function contentRefId(areaId, sourceType, sourceId) {
         weekday: weekdayName(d.jy, d.jm, d.jd),
         isToday: i === 0,
         total: dayTasks.length,
-        done: dayTasks.filter((x) => x.completed).length,
+        done: dayTasks.filter(function(x){
+          if (x.recurrence && x.recurrence !== "none") {
+            return !!(x.recurrenceExceptions && x.recurrenceExceptions[dKey] === "completed");
+          }
+          return x.completed;
+        }).length,
         overdue: dayTasks.filter((x) => !x.completed && compareJalaliDate(x.date, today) < 0).length,
         shifts: dayShifts.length
       });

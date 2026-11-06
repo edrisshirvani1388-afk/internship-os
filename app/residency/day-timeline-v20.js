@@ -352,6 +352,48 @@
     var sid = _esc((vm.item && vm.item.sourceId) || "");
     var status = _esc(vm.status || "");
     var isDone = (status === "completed" || status === "done");
+if (vm.item && vm.item.sourceType === "task" && vm.item.sourceId) {
+  try {
+    var _sta = (window.__os && window.__os.getState) ? window.__os.getState() : (window.INTERNSHIP_STATE || null);
+    if (_sta && _sta.tasks) {
+      for (var _tia = 0; _tia < _sta.tasks.length; _tia++) {
+        var _pta = _sta.tasks[_tia];
+        if (_pta && _pta.id === vm.item.sourceId) {
+          if (_pta.recurrence && _pta.recurrence !== "none") {
+            isDone = false;
+            var _oda = vm.item.occurrenceDate || vm.item.date || vm.date || null;
+            if (_oda && _pta.recurrenceExceptions && _pta.recurrenceExceptions[_oda] === "completed") isDone = true;
+          } else {
+            isDone = !!_pta.completed;
+          }
+          break;
+        }
+      }
+    }
+  } catch(e) {}
+}
+    if (!isDone && vm.item && vm.item.sourceType === "task" && vm.item.sourceId) {
+      try {
+        var _st = (window.__os && window.__os.getState) ? window.__os.getState() : (window.INTERNSHIP_STATE || null);
+        if (_st && _st.tasks) {
+          for (var _ti = 0; _ti < _st.tasks.length; _ti++) {
+            var _pt = _st.tasks[_ti];
+            if (_pt && _pt.id === vm.item.sourceId) {
+              if (_pt.recurrence && _pt.recurrence !== "none" && _pt.recurrenceExceptions) {
+                var _od = vm.item.date || vm.item.occurrenceDate || vm.date || null;
+                if (_od && _pt.recurrenceExceptions[_od] === "completed") isDone = true;
+              }
+              if (_pt.recurrence && _pt.recurrence !== "none") {
+                /* recurring: parent.completed را نادیده بگیر */
+              } else if (_pt.completed) {
+                isDone = true;
+              }
+              break;
+            }
+          }
+        }
+      } catch(e) {}
+    }
     var catLc = String(vm.category || "").toLowerCase();
     var isResAct = (vm.item && vm.item.sourceType === "residencyActivity") || catLc === "residency";
 

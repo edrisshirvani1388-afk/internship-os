@@ -158,7 +158,15 @@
       console.warn("[availability.engine.v20] projectAll failed:", e);
       return [];
     }
-    return AE.findFreeWindows(date, result.items, options);
+    var _safeItems = result.items.map(function(it) {
+        if (it.status === "completed") {
+          var cloned = Object.assign({}, it);
+          cloned.status = "pending";
+          return cloned;
+        }
+        return it;
+      });
+      return AE.findFreeWindows(date, _safeItems, options);
   };
 
   AE.getNextWindow = function (date, items, options) {

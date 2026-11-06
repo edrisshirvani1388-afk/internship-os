@@ -126,7 +126,7 @@
       endTime: endTime,
       durationMinutes: dur,
       role: role,
-      status: task.completed ? "completed" : "pending",
+      status: (task.completed || (task.recurrence && task.recurrence !== "none" && task.recurrenceExceptions && task.recurrenceExceptions[task.date] === "completed")) ? "completed" : "pending",
       context: null,
       _cont: task._cont || null,  /* PATCH:phase-F7-split5 */
       _sleepAuto: task._sleepAuto || null
@@ -153,7 +153,7 @@
       endTime: endTime,
       durationMinutes: dur,
       role: role,
-      status: "scheduled",
+      status: shift.completed ? "completed" : "scheduled",
       context: { kind: "shift", type: shift.type || null }
     };
   };
